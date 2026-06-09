@@ -82,9 +82,17 @@ export async function submitPromptToRuntime(text: string, runtime: AgentRuntime,
       runId: `error-${Date.now()}`,
       error: {
         code: "RUNTIME_ERROR",
-        message: error instanceof Error ? error.message : String(error),
+        message: formatRuntimeErrorForTui(error),
         cause: error,
       },
     });
   }
+}
+
+export function formatRuntimeErrorForTui(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes("authentication_error") || message.includes("invalid x-api-key")) {
+    return "Anthropic authentication failed: invalid x-api-key. Check your API key with `velaire config model add` or update ~/.velaire/config.yaml.";
+  }
+  return `Provider error: ${message}. You can try again after updating your model configuration.`;
 }
