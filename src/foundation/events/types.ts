@@ -8,6 +8,7 @@ export const runtimeEventTypes = [
   "agent.step.started",
   "model.request.started",
   "model.delta",
+  "model.message.snapshot",
   "model.message.completed",
   "tool.requested",
   "policy.decision",
@@ -34,6 +35,7 @@ export type RuntimeEvent =
   | { type: "agent.step.started"; runId: string; step: number }
   | { type: "model.request.started"; runId: string; step: number; model?: string }
   | { type: "model.delta"; runId: string; step: number; delta: ModelDelta }
+  | { type: "model.message.snapshot"; runId: string; step: number; message: AssistantMessage }
   | { type: "model.message.completed"; runId: string; step: number; message: AssistantMessage }
   | { type: "tool.requested"; runId: string; step: number; toolUseId: string; toolName: string; input: Record<string, unknown> }
   | { type: "policy.decision"; runId: string; step: number; toolUseId: string; decision: PolicyDecisionKind; reason: string }

@@ -79,6 +79,9 @@ export function reduceRuntimeEvent(state: TuiRuntimeState, event: RuntimeEvent):
     case "model.delta":
       return reduceModelDelta(state, event);
 
+    case "model.message.snapshot":
+      return state;
+
     case "model.message.completed":
       return {
         ...state,

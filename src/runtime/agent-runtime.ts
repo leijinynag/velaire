@@ -71,10 +71,14 @@ export class AgentRuntime {
         yield { type: "agent.step.started", runId, step };
         yield { type: "model.request.started", runId, step, model: this.model.name };
 
-        const assistantMessage = await this.collectAssistantMessage(runId, step);
-        for (const event of this.lastModelDeltaEvents) {
+        const collected: { message?: AssistantMessage } = {};
+        for await (const event of this.collectAssistantMessage(runId, step, (message) => {
+          collected.message = message;
+        })) {
           yield event;
         }
+        const assistantMessage = collected.message;
+        if (!assistantMessage) throw new Error("Model stream completed without an assistant message");
         this.messages.push(assistantMessage);
         // 调用 afterModel 中间件，允许对 assistant 消息做后处理
         for (const middleware of this.middleware) {
@@ -113,14 +117,10 @@ export class AgentRuntime {
     return !!this.askUser;
   }
 
-  /** 最近一次模型调用产生的增量事件缓存 */
-  private lastModelDeltaEvents: RuntimeEvent[] = [];
-
   /**
    * 收集一次完整的 assistant 消息：流式读取模型输出，组装内容块、文本和用量信息。
    */
-  private async collectAssistantMessage(runId: string, step: number): Promise<AssistantMessage> {
-    this.lastModelDeltaEvents = [];
+  private async *collectAssistantMessage(runId: string, step: number, setFinalMessage: (message: AssistantMessage) => void): AsyncIterable<RuntimeEvent> {
     const content: AssistantMessage["content"] = [];
     let text = "";
     let usage: AssistantMessage["usage"];
@@ -139,14 +139,18 @@ export class AgentRuntime {
     }
 
     for await (const event of this.model.stream(modelContext)) {
-      this.handleModelEvent(event, runId, step, content, (value) => {
+      const runtimeEvents = this.handleModelEvent(event, runId, step, content, (value) => {
         text += value;
       });
       if (event.type === "usage") usage = event.usage;
+      for (const runtimeEvent of runtimeEvents) yield runtimeEvent;
+      const snapshot = this.buildAssistantMessageSnapshot(text, content, usage);
+      if (runtimeEvents.length > 0 && (snapshot.content.length > 0 || snapshot.usage)) {
+        yield { type: "model.message.snapshot", runId, step, message: snapshot };
+      }
     }
 
-    if (text) content.unshift({ type: "text", text });
-    return { role: "assistant", content, ...(usage ? { usage } : {}) };
+    setFinalMessage(this.buildAssistantMessageSnapshot(text, content, usage));
   }
 
   /**
@@ -224,23 +228,36 @@ export class AgentRuntime {
     }
   }
 
+  private buildAssistantMessageSnapshot(text: string, content: AssistantMessage["content"], usage: AssistantMessage["usage"]): AssistantMessage {
+    return {
+      role: "assistant",
+      content: [...(text ? [{ type: "text" as const, text }] : []), ...content],
+      ...(usage ? { usage } : {}),
+    };
+  }
+
   /**
    * 处理模型流式事件，将 text_delta / tool_use / usage 分别转换为运行时增量事件，并填充 assistant 消息内容。
    */
-  private handleModelEvent(event: ModelStreamEvent, runId: string, step: number, content: AssistantMessage["content"], appendText: (text: string) => void): void {
+  private handleModelEvent(event: ModelStreamEvent, runId: string, step: number, content: AssistantMessage["content"], appendText: (text: string) => void): RuntimeEvent[] {
     if (event.type === "text_delta") {
       appendText(event.text);
-      this.lastModelDeltaEvents.push({ type: "model.delta", runId, step, delta: { type: "text_delta", text: event.text } });
-    } else if (event.type === "tool_use") {
-      content.push({ type: "tool_use", id: event.id, name: event.name, input: event.input });
-      this.lastModelDeltaEvents.push({
-        type: "model.delta",
-        runId,
-        step,
-        delta: { type: "tool_use_delta", toolUseId: event.id, toolName: event.name, inputJsonDelta: JSON.stringify(event.input) },
-      });
-    } else if (event.type === "usage") {
-      this.lastModelDeltaEvents.push({ type: "model.delta", runId, step, delta: { type: "usage", usage: event.usage } });
+      return [{ type: "model.delta", runId, step, delta: { type: "text_delta", text: event.text } }];
     }
+    if (event.type === "tool_use") {
+      content.push({ type: "tool_use", id: event.id, name: event.name, input: event.input });
+      return [
+        {
+          type: "model.delta",
+          runId,
+          step,
+          delta: { type: "tool_use_delta", toolUseId: event.id, toolName: event.name, inputJsonDelta: JSON.stringify(event.input) },
+        },
+      ];
+    }
+    if (event.type === "usage") {
+      return [{ type: "model.delta", runId, step, delta: { type: "usage", usage: event.usage } }];
+    }
+    return [];
   }
 }

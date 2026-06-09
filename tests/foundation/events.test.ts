@@ -9,6 +9,7 @@ describe("runtime events", () => {
       "agent.step.started",
       "model.request.started",
       "model.delta",
+      "model.message.snapshot",
       "model.message.completed",
       "tool.requested",
       "policy.decision",

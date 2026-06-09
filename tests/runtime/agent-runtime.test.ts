@@ -51,10 +51,46 @@ describe("agent runtime", () => {
       "agent.step.started",
       "model.request.started",
       "model.delta",
+      "model.message.snapshot",
       "model.message.completed",
       "agent.run.completed",
     ]);
     expect(runtime.messages.at(-1)).toEqual({ role: "assistant", content: [{ type: "text", text: "hello" }] });
+  });
+
+  test("emits progressive assistant snapshots during provider streaming", async () => {
+    const registry = new ToolRegistry();
+    registry.register(echoTool);
+    const runtime = new AgentRuntime({
+      provider: new MockModelProvider({
+        eventBatches: [
+          [
+            { type: "message_start" },
+            { type: "text_delta", text: "hel" },
+            { type: "text_delta", text: "lo" },
+            { type: "tool_use", id: "toolu_1", name: "echo", input: { value: "hi" } },
+            { type: "usage", usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 } },
+            { type: "message_stop" },
+          ],
+          [{ type: "message_start" }, { type: "text_delta", text: "done" }, { type: "message_stop" }],
+        ],
+      }),
+      systemPrompt: "You are Velaire.",
+      tools: registry,
+    });
+
+    const events = [];
+    for await (const event of runtime.run("hi")) {
+      events.push(event);
+    }
+    const snapshots = events.filter((event): event is Extract<typeof event, { type: "model.message.snapshot" }> => event.type === "model.message.snapshot" && event.step === 1);
+
+    expect(snapshots.map((event) => event.message)).toEqual([
+      { role: "assistant", content: [{ type: "text", text: "hel" }] },
+      { role: "assistant", content: [{ type: "text", text: "hello" }] },
+      { role: "assistant", content: [{ type: "text", text: "hello" }, { type: "tool_use", id: "toolu_1", name: "echo", input: { value: "hi" } }] },
+      { role: "assistant", content: [{ type: "text", text: "hello" }, { type: "tool_use", id: "toolu_1", name: "echo", input: { value: "hi" } }], usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 } },
+    ]);
   });
 
   test("runs middleware before model requests", async () => {
