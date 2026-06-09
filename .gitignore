@@ -1,0 +1,4 @@
+node_modules/
+dist/
+.velaire/settings.local.json
+.DS_Store

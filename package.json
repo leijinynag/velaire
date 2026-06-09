@@ -1,0 +1,62 @@
+{
+  "name": "velaire",
+  "version": "0.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "description": "Velaire is a Bun and TypeScript agent runtime with a built-in coding agent preset.",
+  "license": "MIT",
+  "keywords": [
+    "agent",
+    "agent-runtime",
+    "coding-agent",
+    "cli"
+  ],
+  "bin": {
+    "velaire": "dist/bin/velaire"
+  },
+  "files": [
+    "dist/bin/velaire"
+  ],
+  "module": "index.ts",
+  "type": "module",
+  "scripts": {
+    "prepublishOnly": "bun run build:bin",
+    "dev": "bun run index.ts",
+    "check": "tsc --noEmit && eslint . --ext .ts,.tsx && bun test",
+    "check:types": "tsc --noEmit",
+    "lint": "eslint . --ext .ts,.tsx",
+    "lint:fix": "eslint . --ext .ts,.tsx --fix",
+    "build:js": "rm -rf dist/js && bun build ./index.ts --outdir ./dist/js --splitting --target bun",
+    "build:bin": "rm -rf dist/bin && bun build ./index.ts --compile --outfile dist/bin/velaire",
+    "hooks:install": "git config core.hooksPath .githooks"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.0",
+    "@types/bun": "latest",
+    "@types/react": "^19.2.14",
+    "eslint": "^10.0.2",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-import-x": "^4.16.1",
+    "prettier": "^3.8.1",
+    "react-devtools-core": "^7.0.1",
+    "typescript-eslint": "^8.56.1"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.87.0",
+    "commander": "^14.0.3",
+    "gray-matter": "^4.0.3",
+    "ink": "^6.8.0",
+    "ink-markdown": "^1.0.4",
+    "ink-spinner": "^5.0.0",
+    "ink-text-input": "^6.0.0",
+    "marked-terminal": "^7.3.0",
+    "openai": "^6.33.0",
+    "react": "^19.2.4",
+    "yaml": "^2.8.3",
+    "zod": "^4.3.6"
+  }
+}
