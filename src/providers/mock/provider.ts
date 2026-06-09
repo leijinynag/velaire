@@ -14,11 +14,13 @@ const mockCapabilities: ProviderCapabilities = {
 
 export interface MockModelProviderOptions {
   events?: ModelStreamEvent[];
+  eventBatches?: ModelStreamEvent[][];
 }
 
 export class MockModelProvider implements ModelProvider {
   readonly name = "mock";
   readonly capabilities = mockCapabilities;
+  private streamCount = 0;
 
   constructor(private readonly options: MockModelProviderOptions = {}) {}
 
@@ -54,7 +56,8 @@ export class MockModelProvider implements ModelProvider {
 
   async *stream(_params: ProviderInvokeParams): AsyncIterable<ModelStreamEvent> {
     // Mock provider 固定回放事件，保证 runtime 和 TUI 测试不依赖真实模型网络。
-    for (const event of this.options.events ?? defaultEvents) {
+    const batch = this.options.eventBatches?.[this.streamCount++] ?? this.options.events ?? defaultEvents;
+    for (const event of batch) {
       yield event;
     }
   }

@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
+
+import { afterEach, describe, expect, test } from "bun:test";
 
 import {
   getConfigFilePath,
