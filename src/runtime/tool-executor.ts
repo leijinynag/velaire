@@ -81,8 +81,25 @@ export async function executeToolCall(request: ToolCallExecutionRequest): Promis
   }
 
   events.push({ type: "tool.started", runId, step, toolUseId: toolUse.id, toolName: toolUse.name });
-  // 所有工具执行都集中在这里，runtime 其他层不能直接调用 tool.execute。
-  const result = await registry.execute(toolUse.name, toolUse.input, { cwd, signal });
-  events.push({ type: "tool.completed", runId, step, toolUseId: toolUse.id, toolName: toolUse.name, result });
+  try {
+    // 所有工具执行都集中在这里，runtime 其他层不能直接调用 tool.execute。
+    const result = await registry.execute(toolUse.name, toolUse.input, { cwd, signal });
+    events.push({ type: "tool.completed", runId, step, toolUseId: toolUse.id, toolName: toolUse.name, result });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    events.push({
+      type: "tool.completed",
+      runId,
+      step,
+      toolUseId: toolUse.id,
+      toolName: toolUse.name,
+      result: toolFailure({
+        summary: `Tool ${toolUse.name} failed`,
+        modelContent: `Tool ${toolUse.name} failed: ${message}`,
+        code: "TOOL_EXECUTION_FAILED",
+        message,
+      }),
+    });
+  }
   return events;
 }
