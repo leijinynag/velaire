@@ -3,9 +3,10 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type { AssistantMessage, NonSystemMessage, TokenUsage, ToolUseContentBlock } from "@/foundation/messages/types";
 import type { ProviderInvokeParams } from "@/providers/types";
 
-export type AnthropicProviderOptions = Omit<Partial<Anthropic.MessageCreateParamsNonStreaming>, "messages" | "tools" | "system"> & {
+export type AnthropicProviderOptions = Omit<Partial<Anthropic.MessageCreateParamsNonStreaming>, "messages" | "tools" | "system" | "thinking"> & {
   model?: string;
   max_tokens?: number;
+  thinking?: ({ type?: string; budget_tokens?: number } & Record<string, unknown>) | Anthropic.MessageCreateParamsNonStreaming["thinking"];
 };
 
 export function convertToAnthropicMessages(messages: NonSystemMessage[]): Anthropic.MessageParam[] {
@@ -65,14 +66,32 @@ export function convertToAnthropicTools(tools: NonNullable<ProviderInvokeParams[
 export function buildAnthropicRequest(params: ProviderInvokeParams<AnthropicProviderOptions>): Anthropic.MessageCreateParamsNonStreaming {
   const { systemPrompt, messages, tools, options } = params;
   const convertedTools = tools && tools.length > 0 ? convertToAnthropicTools(tools) : undefined;
+  const normalizedOptions = normalizeAnthropicOptions(options);
 
   return {
-    model: options?.model ?? "claude-opus-4-7",
-    max_tokens: options?.max_tokens ?? 16_000,
-    ...options,
+    model: normalizedOptions.model ?? "claude-opus-4-7",
+    max_tokens: normalizedOptions.max_tokens ?? 16_000,
+    ...normalizedOptions,
     messages: convertToAnthropicMessages(messages),
     ...(systemPrompt ? { system: systemPrompt } : {}),
     ...(convertedTools ? { tools: convertedTools } : {}),
+  } as Anthropic.MessageCreateParamsNonStreaming;
+}
+
+export function normalizeAnthropicOptions(options: AnthropicProviderOptions | undefined): AnthropicProviderOptions {
+  const maxTokens = options?.max_tokens ?? 16_000;
+  const thinking = options?.thinking as ({ type?: string; budget_tokens?: number } & Record<string, unknown>) | undefined;
+  if (thinking?.type !== "enabled" || thinking.budget_tokens !== undefined) {
+    return { ...options };
+  }
+
+  // Anthropic 开启 thinking 时必须显式传入 budget_tokens，这里按 Helixent 规则自动补齐。
+  return {
+    ...options,
+    thinking: {
+      ...thinking,
+      budget_tokens: Math.floor(maxTokens * 0.8),
+    } as AnthropicProviderOptions["thinking"],
   };
 }
 

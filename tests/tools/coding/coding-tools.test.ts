@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
-import { createCodingTools, createTodoWriteTool, createAskUserQuestionTool } from "@/tools/coding";
+import { createCodingTools, createTodoSystem, createTodoWriteTool, createAskUserQuestionTool } from "@/tools/coding";
 import type { ToolDefinition } from "@/tools/types";
 
 let workspace: string;
@@ -182,6 +182,48 @@ describe("todo and user-interaction tools", () => {
     await expect(
       tool.execute({ todos: [{ id: "1", content: "first", status: "completed" }], merge: true }, { cwd: workspace }),
     ).resolves.toMatchObject({ ok: true, data: { counts: { completed: 1 } } });
+  });
+
+  test("todo reminder follows Helixent threshold, throttle, and reset behavior", async () => {
+    const { middleware, tool } = createTodoSystem();
+    const transcript = { messages: [] };
+    const agentContext = { messages: [], systemPrompt: "system" };
+    const modelContext = () => ({ systemPrompt: "system", messages: [] });
+    const todoWriteUse = { type: "tool_use" as const, id: "toolu_0", name: "todo_write", input: {} };
+
+    const emptyContext = modelContext();
+    await middleware.beforeModel?.({ transcript, modelContext: emptyContext, agentContext });
+    expect(emptyContext.systemPrompt).toBe("system");
+
+    await tool.execute({ todos: [{ id: "1", content: "plan work", status: "pending" }], merge: false }, { cwd: workspace });
+    await middleware.afterToolUse?.({ toolUse: todoWriteUse, toolResult: { ok: true, summary: "ok", modelContent: "ok" }, agentContext });
+    for (let i = 0; i < 9; i++) {
+      const context = modelContext();
+      await middleware.beforeModel?.({ transcript, modelContext: context, agentContext });
+      expect(context.systemPrompt).not.toContain("<todo_reminder>");
+    }
+
+    const thresholdContext = modelContext();
+    await middleware.beforeModel?.({ transcript, modelContext: thresholdContext, agentContext });
+    expect(thresholdContext.systemPrompt).toContain("<todo_reminder>");
+    expect(thresholdContext.systemPrompt).toContain("plan work");
+
+    for (let i = 0; i < 9; i++) {
+      const context = modelContext();
+      await middleware.beforeModel?.({ transcript, modelContext: context, agentContext });
+      expect(context.systemPrompt).not.toContain("<todo_reminder>");
+    }
+
+    const throttledContext = modelContext();
+    await middleware.beforeModel?.({ transcript, modelContext: throttledContext, agentContext });
+    expect(throttledContext.systemPrompt).toContain("<todo_reminder>");
+
+    await middleware.afterToolUse?.({ toolUse: todoWriteUse, toolResult: { ok: true, summary: "ok", modelContent: "ok" }, agentContext });
+    for (let i = 0; i < 9; i++) {
+      const context = modelContext();
+      await middleware.beforeModel?.({ transcript, modelContext: context, agentContext });
+      expect(context.systemPrompt).not.toContain("<todo_reminder>");
+    }
   });
 
   test("ask_user_question validates callback answers", async () => {

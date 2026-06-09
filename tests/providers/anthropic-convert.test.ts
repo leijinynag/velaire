@@ -90,6 +90,30 @@ describe("Anthropic message conversion", () => {
     });
   });
 
+  test("fills Anthropic thinking budget without mutating caller options", () => {
+    const options = { model: "claude-test", max_tokens: 1000, thinking: { type: "enabled" as const } };
+    const request = buildAnthropicRequest({
+      systemPrompt: "",
+      messages: [{ role: "user", content: [{ type: "text", text: "Hi" }] }],
+      tools: [],
+      options,
+    });
+
+    expect(request.thinking).toEqual({ type: "enabled", budget_tokens: 800 });
+    expect(options.thinking).toEqual({ type: "enabled" });
+  });
+
+  test("preserves explicit Anthropic thinking budget", () => {
+    const request = buildAnthropicRequest({
+      systemPrompt: "",
+      messages: [{ role: "user", content: [{ type: "text", text: "Hi" }] }],
+      tools: [],
+      options: { model: "claude-test", max_tokens: 1000, thinking: { type: "enabled", budget_tokens: 256 } },
+    });
+
+    expect(request.thinking).toEqual({ type: "enabled", budget_tokens: 256 });
+  });
+
   test("parses Anthropic responses without exposing hidden thinking text", () => {
     const message = parseAnthropicMessage({
       usage: { input_tokens: 7, output_tokens: 11 },

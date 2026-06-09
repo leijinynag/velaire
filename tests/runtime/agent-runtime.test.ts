@@ -165,4 +165,40 @@ describe("agent runtime", () => {
     expect(runtime.messages.map((message) => message.role)).toEqual(["user", "assistant", "tool", "assistant"]);
     expect(runtime.messages.at(-1)).toEqual({ role: "assistant", content: [{ type: "text", text: "done" }] });
   });
+
+  test("formats tool results through the transcript policy before continuing", async () => {
+    const registry = new ToolRegistry();
+    registry.register({
+      ...echoTool,
+      name: "list_files",
+      async execute() {
+        return {
+          ok: true,
+          summary: "Listed files",
+          modelContent: "raw entries should not be sent directly",
+          data: { entries: ["a.ts", "b.ts"] },
+        };
+      },
+    });
+    const runtime = new AgentRuntime({
+      provider: new MockModelProvider({
+        eventBatches: [
+          [{ type: "message_start" }, { type: "tool_use", id: "toolu_1", name: "list_files", input: { value: "ignored" } }, { type: "message_stop" }],
+          [{ type: "message_start" }, { type: "text_delta", text: "done" }, { type: "message_stop" }],
+        ],
+      }),
+      systemPrompt: "You are Velaire.",
+      tools: registry,
+    });
+
+    for await (const _event of runtime.run("use a tool")) {
+      // consume stream
+    }
+
+    const toolMessage = runtime.messages.find((message) => message.role === "tool");
+    expect(toolMessage?.content[0]).toMatchObject({
+      type: "tool_result",
+      content: JSON.stringify({ ok: true, summary: "Listed files" }),
+    });
+  });
 });

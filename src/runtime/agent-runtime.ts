@@ -7,6 +7,7 @@ import type { ToolExecutionResult } from "@/tools/types";
 import type { AgentContext, BeforeToolUseResult } from "./middleware";
 import { createRunId } from "./session";
 import { executeToolCall } from "./tool-executor";
+import { formatToolResultForMessage } from "./tool-result-runtime";
 import type { AgentRuntimeOptions } from "./types";
 
 /**
@@ -178,9 +179,10 @@ export class AgentRuntime {
       for (const event of completed.events) yield event;
       const completedEvent = completed.events.find((event) => event.type === "tool.completed");
       if (completedEvent?.type === "tool.completed") {
+        // UI 事件保留完整结果；写回模型上下文时使用更短、更稳定的结构化内容。
         const toolMessage: ToolMessage = {
           role: "tool",
-          content: [{ type: "tool_result", toolUseId: completed.toolUse.id, content: completedEvent.result.modelContent, isError: !completedEvent.result.ok }],
+          content: [{ type: "tool_result", toolUseId: completed.toolUse.id, content: formatToolResultForMessage({ toolName: completed.toolUse.name, result: completedEvent.result }), isError: !completedEvent.result.ok }],
         };
         this.messages.push(toolMessage);
       }
