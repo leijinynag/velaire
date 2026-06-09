@@ -2,6 +2,7 @@ import type { NonSystemMessage, ToolUseContentBlock } from "@/foundation/message
 import type { ApprovalDecision, PolicyProfile } from "@/policy/types";
 import type { ModelProvider } from "@/providers/types";
 import type { ToolRegistry } from "@/tools/registry";
+import type { ToolExecutionResult } from "@/tools/types";
 
 import type { AgentMiddleware } from "./middleware";
 
@@ -26,6 +27,7 @@ export interface ToolCallExecutionRequest {
   policyProfile: PolicyProfile;
   signal?: AbortSignal;
   askUser?: (request: { toolUseId: string; toolName: string; input: Record<string, unknown> }) => Promise<ApprovalDecision>;
+  skipResult?: ToolExecutionResult;
 }
 
 export interface Transcript {

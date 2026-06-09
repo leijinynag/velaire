@@ -1,5 +1,5 @@
 import { bashTool } from "@/tools/shell";
-import { createTodoWriteTool } from "@/tools/todo";
+import { createTodoSystem } from "@/tools/todo";
 import type { ToolDefinition } from "@/tools/types";
 import { createAskUserQuestionTool } from "@/tools/user-interaction";
 import type { AskUserQuestionParameters, AskUserQuestionResult } from "@/tools/user-interaction";
@@ -16,23 +16,31 @@ import {
   writeFileTool,
 } from "@/tools/workspace";
 
-export { createTodoWriteTool } from "@/tools/todo";
+export { createTodoSystem, createTodoWriteTool } from "@/tools/todo";
 export { createAskUserQuestionTool } from "@/tools/user-interaction";
 
 export function createCodingTools(options: { askUserQuestion?: (params: AskUserQuestionParameters) => Promise<AskUserQuestionResult> } = {}): ToolDefinition[] {
-  return [
-    bashTool,
-    readFileTool,
-    writeFileTool,
-    strReplaceTool,
-    listFilesTool,
-    globSearchTool,
-    grepSearchTool,
-    applyPatchTool,
-    fileInfoTool,
-    mkdirTool,
-    movePathTool,
-    createTodoWriteTool(),
-    createAskUserQuestionTool(options.askUserQuestion),
-  ];
+  return createCodingToolSystem(options).tools;
+}
+
+export function createCodingToolSystem(options: { askUserQuestion?: (params: AskUserQuestionParameters) => Promise<AskUserQuestionResult> } = {}) {
+  const todoSystem = createTodoSystem();
+  return {
+    tools: [
+      bashTool,
+      readFileTool,
+      writeFileTool,
+      strReplaceTool,
+      listFilesTool,
+      globSearchTool,
+      grepSearchTool,
+      applyPatchTool,
+      fileInfoTool,
+      mkdirTool,
+      movePathTool,
+      todoSystem.tool,
+      createAskUserQuestionTool(options.askUserQuestion),
+    ] satisfies ToolDefinition[],
+    middleware: [todoSystem.middleware],
+  };
 }

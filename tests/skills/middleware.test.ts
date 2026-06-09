@@ -33,9 +33,9 @@ describe("skills middleware", () => {
     const middleware = createSkillsMiddleware({ workspace, cwd: workspace });
     const modelContext = { systemPrompt: "You are Velaire.", messages: [] };
 
-    await middleware.beforeModel?.({ transcript: { messages: [] }, modelContext });
+    await middleware.beforeModel?.({ transcript: { messages: [] }, modelContext, agentContext: { messages: [], systemPrompt: modelContext.systemPrompt } });
 
-    expect(modelContext.systemPrompt).toContain("<velaire_skills>");
+    expect(modelContext.systemPrompt).toContain("<skill_system>");
     expect(modelContext.systemPrompt).toContain('<skill name="coding-plan"');
     expect(modelContext.systemPrompt).toContain(`path="${skillPath}"`);
     expect(modelContext.systemPrompt).toContain("Plan code changes");
@@ -47,10 +47,10 @@ describe("skills middleware", () => {
     const middleware = createSkillsMiddleware({ workspace, cwd: workspace, requestedSkillName: "deep-research-plan" });
     const modelContext = { systemPrompt: "Base prompt", messages: [] };
 
-    await middleware.beforeModel?.({ transcript: { messages: [] }, modelContext });
+    await middleware.beforeModel?.({ transcript: { messages: [] }, modelContext, agentContext: { messages: [], systemPrompt: modelContext.systemPrompt } });
 
     expect(modelContext.systemPrompt).toContain("<explicit_skill_invocation>");
-    expect(modelContext.systemPrompt).toContain('requested skill "deep-research-plan"');
+    expect(modelContext.systemPrompt).toContain('selected the skill "deep-research-plan"');
     expect(modelContext.systemPrompt).toContain(skillPath);
   });
 });

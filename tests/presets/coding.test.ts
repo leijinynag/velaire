@@ -44,15 +44,15 @@ describe("coding preset", () => {
     expect(toolNames).toEqual(REQUIRED_CODING_TOOLS);
   });
 
-  test("loads AGENTS.md guidance into the system prompt when present", async () => {
+  test("keeps AGENTS.md guidance out of the system prompt", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "velaire-coding-preset-"));
     try {
       await writeFile(join(cwd, "AGENTS.md"), "Project rule: use TDD.\n");
 
       const systemPrompt = await codingPreset.createSystemPrompt({ cwd });
 
-      expect(systemPrompt).toContain("AGENTS.md");
-      expect(systemPrompt).toContain("Project rule: use TDD.");
+      expect(systemPrompt).not.toContain("AGENTS.md");
+      expect(systemPrompt).not.toContain("Project rule: use TDD.");
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

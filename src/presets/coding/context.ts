@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import type { UserMessage } from "@/foundation";
+
 export interface CodingPromptContext {
   cwd: string;
   planMode?: boolean;
@@ -14,6 +16,11 @@ export async function loadAgentsGuidance(cwd: string): Promise<string | null> {
     if (isMissingFileError(error)) return null;
     throw error;
   }
+}
+
+export async function loadAgentsGuidanceMessage(cwd: string): Promise<UserMessage | null> {
+  const guidance = await loadAgentsGuidance(cwd);
+  return guidance ? { role: "user", content: [{ type: "text", text: guidance }] } : null;
 }
 
 function isMissingFileError(error: unknown): boolean {

@@ -6,10 +6,15 @@ import { toolFailure } from "@/tools/results";
 import type { ToolCallExecutionRequest } from "./types";
 
 export async function executeToolCall(request: ToolCallExecutionRequest): Promise<RuntimeEvent[]> {
-  const { runId, step, toolUse, registry, cwd, policyProfile, signal, askUser } = request;
+  const { runId, step, toolUse, registry, cwd, policyProfile, signal, askUser, skipResult } = request;
   const events: RuntimeEvent[] = [
     { type: "tool.requested", runId, step, toolUseId: toolUse.id, toolName: toolUse.name, input: toolUse.input },
   ];
+
+  if (skipResult) {
+    events.push({ type: "tool.completed", runId, step, toolUseId: toolUse.id, toolName: toolUse.name, result: skipResult });
+    return events;
+  }
 
   const tool = registry.get(toolUse.name);
   const decision = evaluatePolicy(

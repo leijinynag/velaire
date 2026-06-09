@@ -18,17 +18,23 @@ export function renderSkillsPromptBlock(skills: Skill[], requestedSkillName?: st
     .join("\n");
 
   return `
-<velaire_skills>
+<skill_system>
 <instructions>
-You have access to Velaire skills: Markdown files that describe task-specific workflows.
-When the user request matches a skill, read the SKILL.md file at the path attribute before answering.
-Load only the skill file first; read adjacent referenced files only when needed.
+You have access to skills that provide optimized workflows for specific tasks. Each skill contains best practices, frameworks, and references to additional resources.
+
+**Progressive Loading Pattern:**
+1. When a user query matches a skill's use case, immediately call \`read_file\` on the skill's main file using the path attribute provided in the skill tag below
+2. If an explicit requested skill is provided in the system context, load that skill first even if the user message is short
+3. Read and understand the skill's workflow and instructions
+4. The skill file contains references to external resources under the same folder
+5. Load referenced resources only when needed during execution
+6. Follow the skill's instructions precisely
 </instructions>
 ${
   requestedSkillName
     ? `<explicit_skill_invocation>
-The user explicitly requested skill "${requestedSkillName}".${
-        requestedSkill ? ` Read the matching skill file at "${requestedSkill.path}" before answering.` : " No discovered skill matched that name."
+The user explicitly selected the skill "${requestedSkillName}" from the slash command picker.${
+        requestedSkill ? `\nYou must read the matching skill file at "${requestedSkill.path}" before answering.` : "\nNo discovered skill matched that name."
       }
 </explicit_skill_invocation>
 `
@@ -36,7 +42,7 @@ The user explicitly requested skill "${requestedSkillName}".${
 }<skills>
 ${skillsXml}
 </skills>
-</velaire_skills>`;
+</skill_system>`;
 }
 
 export function createSkillsMiddleware(options: SkillsMiddlewareOptions = {}): AgentMiddleware {

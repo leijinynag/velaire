@@ -1,11 +1,10 @@
-import { loadAgentsGuidance, type CodingPromptContext } from "./context";
+import type { CodingPromptContext } from "./context";
 
 function normalizeCwd(cwd: string): string {
   return cwd.endsWith("/") ? cwd : `${cwd}/`;
 }
 
 export async function createCodingSystemPrompt({ cwd, planMode = false }: CodingPromptContext): Promise<string> {
-  const agentsGuidance = await loadAgentsGuidance(cwd);
   const planModePrompt = planMode
     ? `
 
@@ -13,7 +12,7 @@ export async function createCodingSystemPrompt({ cwd, planMode = false }: Coding
 Do not execute workspace-changing tools until the user approves the plan. Read-only exploration is allowed.
 </plan_mode>`
     : "";
-  const prompt = `<agent name="Velaire" role="coding_agent" description="A coding agent">
+  return `<agent name="Velaire" role="coding_agent" description="A coding agent">
 Use the given tools and skills to perform parallel/sequential operations and solve the user's problem in the given working directory.
 </agent>
 
@@ -34,7 +33,4 @@ Use the given tools and skills to perform parallel/sequential operations and sol
 - Never try to start a local static server. Let the user do it.
 - If the user's input is a simple task or a greeting, you should just respond with a simple answer and then stop.
 </notes>${planModePrompt}`;
-
-  // AGENTS.md 是仓库级指令，放入 system prompt 可让非交互 run 首轮调用也能遵守。
-  return agentsGuidance ? `${prompt}\n\n${agentsGuidance}` : prompt;
 }

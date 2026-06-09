@@ -3,6 +3,8 @@ import { z } from "zod";
 import { toolSuccess } from "@/tools/results";
 import type { ToolDefinition } from "@/tools/types";
 
+import { createTodoReminderMiddleware } from "./reminder";
+
 const todoStatusSchema = z.enum(["pending", "in_progress", "completed", "cancelled"]);
 
 const todoSchema = z.object({
@@ -26,9 +28,13 @@ function counts(todos: Todo[]): Record<TodoStatus, number> {
 }
 
 export function createTodoWriteTool(): ToolDefinition<z.infer<typeof schema>, { todos: Todo[]; counts: Record<TodoStatus, number> }> {
+  return createTodoSystem().tool;
+}
+
+export function createTodoSystem() {
   const store: Todo[] = [];
 
-  return {
+  const tool: ToolDefinition<z.infer<typeof schema>, { todos: Todo[]; counts: Record<TodoStatus, number> }> = {
     name: "todo_write",
     description: "Create or update the in-memory task list for the current session.",
     schema,
@@ -55,5 +61,10 @@ export function createTodoWriteTool(): ToolDefinition<z.infer<typeof schema>, { 
         data,
       });
     },
+  };
+
+  return {
+    tool,
+    middleware: createTodoReminderMiddleware({ getTodos: () => [...store] }),
   };
 }

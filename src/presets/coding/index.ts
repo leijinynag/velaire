@@ -1,4 +1,4 @@
-import { createCodingTools } from "@/tools/coding";
+import { createCodingToolSystem } from "@/tools/coding";
 import { ToolRegistry } from "@/tools/registry";
 
 import type { AsyncAgentPreset } from "../types";
@@ -10,10 +10,18 @@ export const codingPreset: AsyncAgentPreset = {
   description: "Velaire coding assistant with workspace, shell, planning, and user-interaction tools.",
   createSystemPrompt: createCodingSystemPrompt,
   createTools() {
-    const registry = new ToolRegistry();
-    for (const tool of createCodingTools()) {
-      registry.register(tool);
-    }
-    return registry;
+    return createCodingToolRegistry().tools;
+  },
+  createMiddleware() {
+    return createCodingToolRegistry().middleware;
   },
 };
+
+function createCodingToolRegistry() {
+  const registry = new ToolRegistry();
+  const toolSystem = createCodingToolSystem();
+  for (const tool of toolSystem.tools) {
+    registry.register(tool);
+  }
+  return { tools: registry, middleware: toolSystem.middleware };
+}
