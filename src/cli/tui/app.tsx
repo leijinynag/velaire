@@ -1,4 +1,4 @@
-import { Box } from "ink";
+import { Box, Text } from "ink";
 import { useCallback, useMemo } from "react";
 
 import type { RuntimeEvent } from "@/foundation/events/types";
@@ -25,7 +25,7 @@ export function App({ commands = BUILTIN_COMMANDS, runtime }: { commands?: Slash
     <Box flexDirection="column" width="100%">
       {state.messages.length === 0 ? <Header /> : null}
       <MessageHistory messages={viewModel.messages} todoSnapshots={todoView.todoSnapshots} />
-      {viewModel.errorText ? <Box paddingX={2}>Provider error: {viewModel.errorText}</Box> : null}
+      {viewModel.errorText ? <Box paddingX={2}><Text color="red">Provider error: {viewModel.errorText}</Text></Box> : null}
       <StreamingIndicator streaming={viewModel.streaming} />
       <InputBox commands={commands} onSubmit={handleSubmit} onAbort={() => runtime?.abort()} />
       {todoView.latestTodos ? null : null}
