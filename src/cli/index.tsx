@@ -4,6 +4,7 @@ import { render } from "ink";
 import { ensureFirstRunConfig } from "@/cli/bootstrap/first-run-wizard";
 import { registerConfigModelCommands } from "@/cli/commands/config-model";
 import { App } from "@/cli/tui/app";
+import { loadAvailableCommands } from "@/cli/tui/command-registry";
 import { loadConfig } from "@/config/load";
 import type { ModelEntry, VelaireConfig } from "@/config/types";
 import { VELAIRE_NAME, VELAIRE_VERSION } from "@/index";
@@ -51,7 +52,8 @@ export function createProgram(): Command {
       await ensureFirstRunConfig({});
       const approvalManager = new ApprovalManager();
       const runtime = await createRuntimeFromConfig(loadConfig(), {}, { approvalManager });
-      render(<App approvalManager={approvalManager} runtime={runtime} />);
+      const commands = await loadAvailableCommands({ workspace: process.cwd(), cwd: process.cwd() });
+      render(<App approvalManager={approvalManager} commands={commands} runtime={runtime} />);
     });
 
   registerConfigModelCommands(program);

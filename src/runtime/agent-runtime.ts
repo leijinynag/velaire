@@ -8,7 +8,7 @@ import type { AgentContext, BeforeToolUseResult } from "./middleware";
 import { createRunId } from "./session";
 import { executeToolCall } from "./tool-executor";
 import { formatToolResultForMessage } from "./tool-result-runtime";
-import type { AgentRuntimeOptions } from "./types";
+import type { AgentRunOptions, AgentRuntimeOptions } from "./types";
 
 /**
  * Agent 运行时类，负责编排 Agent 的主循环：接收用户输入、调用模型、执行工具、触发中间件回调等。
@@ -59,7 +59,7 @@ export class AgentRuntime {
    * 启动 Agent 运行的主入口，接收用户输入，按步骤循环调用模型并执行工具，通过 AsyncIterable 产出运行时事件。
    * @param input - 用户输入文本
    */
-  async *run(input: string): AsyncIterable<RuntimeEvent> {
+  async *run(input: string, options: AgentRunOptions = {}): AsyncIterable<RuntimeEvent> {
     const runId = createRunId();
     this.abortController = new AbortController();
     const userMessage: UserMessage = { role: "user", content: [{ type: "text", text: input }] };
@@ -67,6 +67,8 @@ export class AgentRuntime {
     yield { type: "agent.run.started", runId, input };
 
     try {
+      this.agentContext.requestedSkillName = options.requestedSkillName ?? null;
+      this.agentContext.planMode = options.planMode ?? false;
       await this.runAgentContextHook("beforeAgentRun");
       for (let step = 1; step <= this.maxSteps; step++) {
         this.abortController.signal.throwIfAborted();
@@ -106,6 +108,8 @@ export class AgentRuntime {
 
       yield { type: "agent.error", runId, error: { code: "MAX_STEPS_REACHED", message: "Maximum number of agent steps reached" } };
     } finally {
+      this.agentContext.requestedSkillName = null;
+      this.agentContext.planMode = false;
       this.abortController = null;
     }
   }
@@ -169,6 +173,7 @@ export class AgentRuntime {
         registry: this.tools,
         cwd: this.cwd,
         policyProfile: this.policyProfile,
+        planMode: this.agentContext.planMode,
         signal: this.abortController?.signal,
         askUser: this.askUser,
         approvalPersistence: this.approvalPersistence,

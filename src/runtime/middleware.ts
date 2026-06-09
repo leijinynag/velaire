@@ -7,6 +7,7 @@ import type { Transcript } from "./types";
 export type AgentContext = Transcript & {
   systemPrompt: string;
   requestedSkillName?: string | null;
+  planMode?: boolean;
   skills?: unknown[];
 };
 

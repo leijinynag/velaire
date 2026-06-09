@@ -53,7 +53,7 @@ export function createSkillsMiddleware(options: SkillsMiddlewareOptions = {}): A
     },
     beforeModel: ({ modelContext, agentContext }) => {
       const skills = Array.isArray(agentContext.skills) ? (agentContext.skills as SkillFrontmatter[]) : [];
-      const skillsBlock = renderSkillsPromptBlock(skills, options.requestedSkillName);
+      const skillsBlock = renderSkillsPromptBlock(skills, agentContext.requestedSkillName ?? options.requestedSkillName);
       if (!skillsBlock) return;
       modelContext.systemPrompt = `${modelContext.systemPrompt}\n\n${skillsBlock}`;
     },

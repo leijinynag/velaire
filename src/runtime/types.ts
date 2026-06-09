@@ -12,6 +12,11 @@ export interface ApprovalPersistence {
   persistAllowedTool(cwd: string, toolName: string): Promise<void>;
 }
 
+export interface AgentRunOptions {
+  requestedSkillName?: string | null;
+  planMode?: boolean;
+}
+
 export interface AgentRuntimeOptions {
   provider?: ModelProvider;
   model?: Model;
@@ -33,6 +38,7 @@ export interface ToolCallExecutionRequest {
   registry: ToolRegistry;
   cwd: string;
   policyProfile: PolicyProfile;
+  planMode?: boolean;
   signal?: AbortSignal;
   askUser?: (request: { toolUseId: string; toolName: string; input: Record<string, unknown> }) => Promise<ApprovalDecision>;
   approvalPersistence?: ApprovalPersistence;

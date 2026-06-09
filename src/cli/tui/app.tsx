@@ -26,7 +26,7 @@ export function App({ approvalManager, commands = BUILTIN_COMMANDS, runtime }: {
 
   const handleSubmit = useCallback((submission: PromptSubmission) => {
     if (!canSubmitPrompt({ hasPendingApproval: !!approvalRequest, streaming: viewModel.streaming })) return;
-    void handleSubmittedText(submission.text, runtime, applyEvent, commands);
+    void handleSubmittedText(submission, runtime, applyEvent, commands);
   }, [applyEvent, approvalRequest, commands, runtime, viewModel.streaming]);
 
   return (
@@ -53,7 +53,9 @@ export function canSubmitPrompt(state: { hasPendingApproval: boolean; streaming:
   return isInputActive(state);
 }
 
-export async function handleSubmittedText(text: string, runtime: AgentRuntime | undefined, applyEvent: (event: RuntimeEvent) => void, commands: SlashCommand[] = BUILTIN_COMMANDS): Promise<void> {
+export async function handleSubmittedText(submission: PromptSubmission | string, runtime: AgentRuntime | undefined, applyEvent: (event: RuntimeEvent) => void, commands: SlashCommand[] = BUILTIN_COMMANDS): Promise<void> {
+  const text = typeof submission === "string" ? submission : submission.text;
+  const requestedSkillName = typeof submission === "string" ? null : submission.requestedSkillName;
   const command = resolveBuiltinCommand(text);
   if (command?.name === "exit" || command?.name === "quit") {
     process.exit(0);
@@ -90,13 +92,13 @@ export async function handleSubmittedText(text: string, runtime: AgentRuntime | 
     return;
   }
 
-  await submitPromptToRuntime(text, runtime, applyEvent);
+  await submitPromptToRuntime(text, runtime, applyEvent, { requestedSkillName, planMode: requestedSkillName === "coding-plan" });
 }
 
-export async function submitPromptToRuntime(text: string, runtime: AgentRuntime, applyEvent: (event: RuntimeEvent) => void): Promise<void> {
+export async function submitPromptToRuntime(text: string, runtime: AgentRuntime, applyEvent: (event: RuntimeEvent) => void, options: { requestedSkillName?: string | null; planMode?: boolean } = {}): Promise<void> {
   try {
     // TUI 只消费 RuntimeEvent，保持和 provider 原始流解耦。
-    for await (const event of runtime.run(text)) {
+    for await (const event of runtime.run(text, options)) {
       applyEvent(event);
     }
   } catch (error) {

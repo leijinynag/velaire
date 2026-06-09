@@ -6,7 +6,7 @@ import { toolFailure } from "@/tools/results";
 import type { ToolCallExecutionRequest } from "./types";
 
 export async function executeToolCall(request: ToolCallExecutionRequest): Promise<RuntimeEvent[]> {
-  const { runId, step, toolUse, registry, cwd, policyProfile, signal, askUser, approvalPersistence, skipResult } = request;
+  const { runId, step, toolUse, registry, cwd, policyProfile, planMode, signal, askUser, approvalPersistence, skipResult } = request;
   const events: RuntimeEvent[] = [
     { type: "tool.requested", runId, step, toolUseId: toolUse.id, toolName: toolUse.name, input: toolUse.input },
   ];
@@ -25,6 +25,7 @@ export async function executeToolCall(request: ToolCallExecutionRequest): Promis
       risk: tool.risk,
       cwd,
       source: "model",
+      planMode,
     },
     policyProfile,
   );
