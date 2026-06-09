@@ -1,5 +1,6 @@
 import type { RuntimeEvent } from "@/foundation/events/types";
 import { evaluatePolicy } from "@/policy/engine";
+import type { ApprovalDecision } from "@/policy/types";
 import { toolFailure } from "@/tools/results";
 
 import type { ToolCallExecutionRequest } from "./types";
@@ -42,8 +43,23 @@ export async function executeToolCall(request: ToolCallExecutionRequest): Promis
   }
 
   if (decision.decision === "ask") {
-    events.push({ type: "approval.requested", runId, step, toolUseId: toolUse.id, prompt: `Allow ${toolUse.name}?` });
-    const approval = askUser ? await askUser({ toolUseId: toolUse.id, toolName: toolUse.name, input: toolUse.input }) : "deny";
+    let resolveApproval: ((decision: ApprovalDecision) => void) | undefined;
+    const approvalPromise = askUser
+      ? askUser({ toolUseId: toolUse.id, toolName: toolUse.name, input: toolUse.input })
+      : new Promise<ApprovalDecision>((resolve) => {
+          resolveApproval = resolve;
+        });
+    events.push({
+      type: "approval.requested",
+      runId,
+      step,
+      toolUseId: toolUse.id,
+      toolName: toolUse.name,
+      input: toolUse.input,
+      prompt: `Allow ${toolUse.name}?`,
+      ...(resolveApproval ? { resolve: resolveApproval } : {}),
+    });
+    const approval = await approvalPromise;
     events.push({ type: "approval.resolved", runId, step, toolUseId: toolUse.id, approved: approval !== "deny" });
     if (approval === "deny") {
       events.push({

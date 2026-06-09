@@ -1,6 +1,7 @@
 import type { AgentError } from "@/foundation/errors/types";
 import type { RuntimeEvent, TimelineItem } from "@/foundation/events/types";
 import type { AssistantMessage, NonSystemMessage, ToolMessage } from "@/foundation/messages/types";
+import type { ApprovalDecision } from "@/policy/types";
 
 export type ToolRunStatus = "started" | "completed" | "failed";
 
@@ -13,8 +14,11 @@ export interface TuiToolRun {
 
 export interface TuiApprovalState {
   toolUseId: string;
+  toolName?: string;
+  input?: Record<string, unknown>;
   prompt?: string;
   approved?: boolean;
+  resolve?: (decision: ApprovalDecision) => void;
 }
 
 export interface TuiTokenUsageState {
@@ -99,10 +103,10 @@ export function reduceRuntimeEvent(state: TuiRuntimeState, event: RuntimeEvent):
     case "approval.requested":
       return {
         ...state,
-        pendingApproval: { toolUseId: event.toolUseId, prompt: event.prompt },
+        pendingApproval: { toolUseId: event.toolUseId, toolName: event.toolName, input: event.input, prompt: event.prompt, resolve: event.resolve },
         approvals: {
           ...state.approvals,
-          [event.toolUseId]: { toolUseId: event.toolUseId, prompt: event.prompt },
+          [event.toolUseId]: { toolUseId: event.toolUseId, toolName: event.toolName, input: event.input, prompt: event.prompt, resolve: event.resolve },
         },
       };
 

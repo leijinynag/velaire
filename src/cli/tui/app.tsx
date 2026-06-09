@@ -5,6 +5,7 @@ import type { RuntimeEvent } from "@/foundation/events/types";
 import type { AgentRuntime } from "@/runtime/agent-runtime";
 
 import { BUILTIN_COMMANDS, formatHelp, resolveBuiltinCommand, type PromptSubmission, type SlashCommand } from "./command-registry";
+import { ApprovalPrompt } from "./components/approval-prompt";
 import { Footer } from "./components/footer";
 import { Header } from "./components/header";
 import { InputBox } from "./components/input-box";
@@ -25,6 +26,13 @@ export function App({ commands = BUILTIN_COMMANDS, runtime }: { commands?: Slash
     <Box flexDirection="column" width="100%">
       {state.messages.length === 0 ? <Header modelName={viewModel.modelName} /> : null}
       <MessageHistory messages={viewModel.messages} todoSnapshots={todoView.todoSnapshots} />
+      {state.pendingApproval?.toolName && state.pendingApproval.resolve ? (
+        <ApprovalPrompt
+          request={{ toolUseId: state.pendingApproval.toolUseId, toolName: state.pendingApproval.toolName, input: state.pendingApproval.input ?? {} }}
+          supportProjectWideAllow
+          onDecision={state.pendingApproval.resolve}
+        />
+      ) : null}
       {viewModel.errorText ? <Box paddingX={2}><Text color="red">Provider error: {viewModel.errorText}</Text></Box> : null}
       <StreamingIndicator streaming={viewModel.streaming} nextTodo={getNextTodo(todoView.latestTodos)?.content} />
       <InputBox commands={commands} onSubmit={handleSubmit} onAbort={() => runtime?.abort()} />

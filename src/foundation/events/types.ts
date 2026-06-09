@@ -1,6 +1,7 @@
 import type { AgentError } from "@/foundation/errors/types";
 import type { AssistantMessage, TokenUsage } from "@/foundation/messages/types";
 import type { ToolExecutionResult } from "@/foundation/tools/types";
+import type { ApprovalDecision } from "@/policy/types";
 
 export const runtimeEventTypes = [
   "agent.run.started",
@@ -36,7 +37,7 @@ export type RuntimeEvent =
   | { type: "model.message.completed"; runId: string; step: number; message: AssistantMessage }
   | { type: "tool.requested"; runId: string; step: number; toolUseId: string; toolName: string; input: Record<string, unknown> }
   | { type: "policy.decision"; runId: string; step: number; toolUseId: string; decision: PolicyDecisionKind; reason: string }
-  | { type: "approval.requested"; runId: string; step: number; toolUseId: string; prompt: string }
+  | { type: "approval.requested"; runId: string; step: number; toolUseId: string; toolName?: string; input?: Record<string, unknown>; prompt: string; resolve?: (decision: ApprovalDecision) => void }
   | { type: "approval.resolved"; runId: string; step: number; toolUseId: string; approved: boolean }
   | { type: "tool.started"; runId: string; step: number; toolUseId: string; toolName: string }
   | { type: "tool.completed"; runId: string; step: number; toolUseId: string; toolName: string; result: ToolExecutionResult }
