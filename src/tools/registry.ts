@@ -1,5 +1,5 @@
-import type { ToolDefinition, ToolExecutionContext, ToolExecutionResult } from "./types";
 import { toolFailure } from "./results";
+import type { ToolDefinition, ToolExecutionContext, ToolExecutionResult } from "./types";
 
 export class ToolRegistry {
   private readonly tools = new Map<string, ToolDefinition>();
