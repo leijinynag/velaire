@@ -23,7 +23,7 @@ export function App({ commands = BUILTIN_COMMANDS, runtime }: { commands?: Slash
 
   return (
     <Box flexDirection="column" width="100%">
-      {state.messages.length === 0 ? <Header /> : null}
+      {state.messages.length === 0 ? <Header modelName={viewModel.modelName} /> : null}
       <MessageHistory messages={viewModel.messages} todoSnapshots={todoView.todoSnapshots} />
       {viewModel.errorText ? <Box paddingX={2}><Text color="red">Provider error: {viewModel.errorText}</Text></Box> : null}
       <StreamingIndicator streaming={viewModel.streaming} nextTodo={getNextTodo(todoView.latestTodos)?.content} />
