@@ -28,6 +28,8 @@ export class AgentRuntime {
   private readonly middleware: NonNullable<AgentRuntimeOptions["middleware"]>;
   /** 用户确认处理器，用于需要人工审批的工具调用 */
   private readonly askUser: AgentRuntimeOptions["askUser"];
+  /** 项目级审批持久化，用于 always allow in project */
+  private readonly approvalPersistence: AgentRuntimeOptions["approvalPersistence"];
   /** 模型名称（对外暴露） */
   readonly modelName: string;
   /** 最大执行步数，防止无限循环 */
@@ -47,6 +49,7 @@ export class AgentRuntime {
     this.policyProfile = options.policyProfile ?? { allow: [], deny: [] };
     this.middleware = options.middleware ?? [];
     this.askUser = options.askUser;
+    this.approvalPersistence = options.approvalPersistence;
     this.modelName = options.modelName ?? this.model.name;
     this.maxSteps = options.maxSteps ?? 100;
     this.agentContext = { messages: this.messages, systemPrompt: this.systemPrompt };
@@ -168,6 +171,7 @@ export class AgentRuntime {
         policyProfile: this.policyProfile,
         signal: this.abortController?.signal,
         askUser: this.askUser,
+        approvalPersistence: this.approvalPersistence,
         ...(beforeResult.skip ? { skipResult: beforeResult.result } : {}),
       });
       const completed = events.find((event) => event.type === "tool.completed");

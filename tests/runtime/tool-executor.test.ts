@@ -87,6 +87,57 @@ describe("tool executor", () => {
     expect(events.at(-1)).toMatchObject({ type: "tool.completed", result: { ok: true, modelContent: "hello" } });
   });
 
+  test("persists project-wide approvals and executes the approved tool", async () => {
+    const persisted: string[] = [];
+    const registry = new ToolRegistry();
+    registry.register({ ...echoTool, capabilities: ["workspace.write"] });
+
+    const events = await executeToolCall({
+      runId: "run_1",
+      step: 1,
+      toolUse: { type: "tool_use", id: "toolu_1", name: "echo", input: { value: "hello" } },
+      registry,
+      cwd: "/workspace",
+      policyProfile: { allow: [], deny: [] },
+      askUser: async () => "allow_always_project",
+      approvalPersistence: {
+        loadAllowList: async () => new Set(),
+        persistAllowedTool: async (_cwd, toolName) => {
+          persisted.push(toolName);
+        },
+      },
+    });
+
+    expect(persisted).toEqual(["echo"]);
+    expect(events.at(-1)).toMatchObject({ type: "tool.completed", result: { ok: true, modelContent: "hello" } });
+  });
+
+  test("uses persisted project allow list without prompting", async () => {
+    let prompted = false;
+    const registry = new ToolRegistry();
+    registry.register({ ...echoTool, capabilities: ["workspace.write"] });
+
+    const events = await executeToolCall({
+      runId: "run_1",
+      step: 1,
+      toolUse: { type: "tool_use", id: "toolu_1", name: "echo", input: { value: "hello" } },
+      registry,
+      cwd: "/workspace",
+      policyProfile: { allow: [], deny: [] },
+      askUser: async () => {
+        prompted = true;
+        return "deny";
+      },
+      approvalPersistence: {
+        loadAllowList: async () => new Set(["echo"]),
+        persistAllowedTool: async () => {},
+      },
+    });
+
+    expect(prompted).toBe(false);
+    expect(events.map((event) => event.type)).toEqual(["tool.requested", "policy.decision", "tool.started", "tool.completed"]);
+  });
+
   test("does not call a denied tool", async () => {
     let called = false;
     const registry = new ToolRegistry();

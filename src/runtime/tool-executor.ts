@@ -6,7 +6,7 @@ import { toolFailure } from "@/tools/results";
 import type { ToolCallExecutionRequest } from "./types";
 
 export async function executeToolCall(request: ToolCallExecutionRequest): Promise<RuntimeEvent[]> {
-  const { runId, step, toolUse, registry, cwd, policyProfile, signal, askUser, skipResult } = request;
+  const { runId, step, toolUse, registry, cwd, policyProfile, signal, askUser, approvalPersistence, skipResult } = request;
   const events: RuntimeEvent[] = [
     { type: "tool.requested", runId, step, toolUseId: toolUse.id, toolName: toolUse.name, input: toolUse.input },
   ];
@@ -28,9 +28,16 @@ export async function executeToolCall(request: ToolCallExecutionRequest): Promis
     },
     policyProfile,
   );
-  events.push({ type: "policy.decision", runId, step, toolUseId: toolUse.id, decision: decision.decision, reason: decision.reason });
+  let decisionKind = decision.decision;
+  let reason = decision.reason;
+  // 安全优先：显式 deny 永远优先，项目 allow 只跳过 ask，不覆盖禁止策略。
+  if (decisionKind === "ask" && approvalPersistence && (await approvalPersistence.loadAllowList(cwd)).has(toolUse.name)) {
+    decisionKind = "allow";
+    reason = "Allowed by project settings.";
+  }
+  events.push({ type: "policy.decision", runId, step, toolUseId: toolUse.id, decision: decisionKind, reason });
 
-  if (decision.decision === "deny") {
+  if (decisionKind === "deny") {
     events.push({
       type: "tool.completed",
       runId,
@@ -39,15 +46,15 @@ export async function executeToolCall(request: ToolCallExecutionRequest): Promis
       toolName: toolUse.name,
       result: toolFailure({
         summary: `Policy denied ${toolUse.name}`,
-        modelContent: `Policy denied ${toolUse.name}: ${decision.reason}`,
+        modelContent: `Policy denied ${toolUse.name}: ${reason}`,
         code: "POLICY_DENIED",
-        message: decision.reason,
+        message: reason,
       }),
     });
     return events;
   }
 
-  if (decision.decision === "ask") {
+  if (decisionKind === "ask") {
     const approvalPromise = askUser
       ? askUser({ toolUseId: toolUse.id, toolName: toolUse.name, input: toolUse.input })
       : Promise.resolve<ApprovalDecision>("deny");
@@ -62,6 +69,9 @@ export async function executeToolCall(request: ToolCallExecutionRequest): Promis
     });
     const approval = await approvalPromise;
     events.push({ type: "approval.resolved", runId, step, toolUseId: toolUse.id, approved: approval !== "deny" });
+    if (approval === "allow_always_project") {
+      await approvalPersistence?.persistAllowedTool(cwd, toolUse.name);
+    }
     if (approval === "deny") {
       events.push({
         type: "tool.completed",

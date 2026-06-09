@@ -8,6 +8,7 @@ import { loadConfig } from "@/config/load";
 import type { ModelEntry, VelaireConfig } from "@/config/types";
 import { VELAIRE_NAME, VELAIRE_VERSION } from "@/index";
 import { ApprovalManager } from "@/policy/approval-manager";
+import { loadProjectAllowList, persistAllowedTool } from "@/policy/persistence";
 import type { PolicyProfile } from "@/policy/types";
 import { codingPreset } from "@/presets/coding";
 import { researchLitePreset } from "@/presets/research-lite";
@@ -143,6 +144,7 @@ export async function createRuntimeFromConfig(
     policyProfile: resolved.policyProfile,
     middleware: preset.createMiddleware?.() ?? [],
     askUser: runtimeOptions.approvalManager?.requestApproval.bind(runtimeOptions.approvalManager),
+    approvalPersistence: { loadAllowList: loadProjectAllowList, persistAllowedTool },
     modelName: resolved.modelEntry?.model ?? resolved.providerName,
   });
 }

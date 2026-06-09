@@ -7,6 +7,11 @@ import type { ToolExecutionResult } from "@/tools/types";
 
 import type { AgentMiddleware } from "./middleware";
 
+export interface ApprovalPersistence {
+  loadAllowList(cwd: string): Promise<Set<string>>;
+  persistAllowedTool(cwd: string, toolName: string): Promise<void>;
+}
+
 export interface AgentRuntimeOptions {
   provider?: ModelProvider;
   model?: Model;
@@ -16,6 +21,7 @@ export interface AgentRuntimeOptions {
   policyProfile?: PolicyProfile;
   middleware?: AgentMiddleware[];
   askUser?: ToolCallExecutionRequest["askUser"];
+  approvalPersistence?: ApprovalPersistence;
   modelName?: string;
   maxSteps?: number;
 }
@@ -29,6 +35,7 @@ export interface ToolCallExecutionRequest {
   policyProfile: PolicyProfile;
   signal?: AbortSignal;
   askUser?: (request: { toolUseId: string; toolName: string; input: Record<string, unknown> }) => Promise<ApprovalDecision>;
+  approvalPersistence?: ApprovalPersistence;
   skipResult?: ToolExecutionResult;
 }
 
