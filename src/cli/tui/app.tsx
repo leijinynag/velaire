@@ -71,8 +71,20 @@ export async function handleSubmittedText(text: string, runtime: AgentRuntime | 
 }
 
 export async function submitPromptToRuntime(text: string, runtime: AgentRuntime, applyEvent: (event: RuntimeEvent) => void): Promise<void> {
-  // TUI 只消费 RuntimeEvent，保持和 provider 原始流解耦。
-  for await (const event of runtime.run(text)) {
-    applyEvent(event);
+  try {
+    // TUI 只消费 RuntimeEvent，保持和 provider 原始流解耦。
+    for await (const event of runtime.run(text)) {
+      applyEvent(event);
+    }
+  } catch (error) {
+    applyEvent({
+      type: "agent.error",
+      runId: `error-${Date.now()}`,
+      error: {
+        code: "RUNTIME_ERROR",
+        message: error instanceof Error ? error.message : String(error),
+        cause: error,
+      },
+    });
   }
 }
