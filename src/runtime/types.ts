@@ -1,7 +1,9 @@
 import type { NonSystemMessage, ToolUseContentBlock } from "@/foundation/messages/types";
-import type { PolicyProfile } from "@/policy/types";
+import type { ApprovalDecision, PolicyProfile } from "@/policy/types";
 import type { ModelProvider } from "@/providers/types";
 import type { ToolRegistry } from "@/tools/registry";
+
+import type { AgentMiddleware } from "./middleware";
 
 export interface AgentRuntimeOptions {
   provider: ModelProvider;
@@ -9,6 +11,8 @@ export interface AgentRuntimeOptions {
   tools: ToolRegistry;
   cwd?: string;
   policyProfile?: PolicyProfile;
+  middleware?: AgentMiddleware[];
+  askUser?: ToolCallExecutionRequest["askUser"];
   maxSteps?: number;
 }
 
@@ -19,6 +23,8 @@ export interface ToolCallExecutionRequest {
   registry: ToolRegistry;
   cwd: string;
   policyProfile: PolicyProfile;
+  signal?: AbortSignal;
+  askUser?: (request: { toolUseId: string; toolName: string; input: Record<string, unknown> }) => Promise<ApprovalDecision>;
 }
 
 export interface Transcript {

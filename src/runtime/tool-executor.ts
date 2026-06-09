@@ -5,7 +5,7 @@ import { toolFailure } from "@/tools/results";
 import type { ToolCallExecutionRequest } from "./types";
 
 export async function executeToolCall(request: ToolCallExecutionRequest): Promise<RuntimeEvent[]> {
-  const { runId, step, toolUse, registry, cwd, policyProfile } = request;
+  const { runId, step, toolUse, registry, cwd, policyProfile, signal, askUser } = request;
   const events: RuntimeEvent[] = [
     { type: "tool.requested", runId, step, toolUseId: toolUse.id, toolName: toolUse.name, input: toolUse.input },
   ];
@@ -41,9 +41,31 @@ export async function executeToolCall(request: ToolCallExecutionRequest): Promis
     return events;
   }
 
+  if (decision.decision === "ask") {
+    events.push({ type: "approval.requested", runId, step, toolUseId: toolUse.id, prompt: `Allow ${toolUse.name}?` });
+    const approval = askUser ? await askUser({ toolUseId: toolUse.id, toolName: toolUse.name, input: toolUse.input }) : "deny";
+    events.push({ type: "approval.resolved", runId, step, toolUseId: toolUse.id, approved: approval !== "deny" });
+    if (approval === "deny") {
+      events.push({
+        type: "tool.completed",
+        runId,
+        step,
+        toolUseId: toolUse.id,
+        toolName: toolUse.name,
+        result: toolFailure({
+          summary: `Approval required for ${toolUse.name}`,
+          modelContent: `User approval is required before running ${toolUse.name}.`,
+          code: "APPROVAL_REQUIRED",
+          message: "Tool execution requires approval.",
+        }),
+      });
+      return events;
+    }
+  }
+
   events.push({ type: "tool.started", runId, step, toolUseId: toolUse.id, toolName: toolUse.name });
   // 所有工具执行都集中在这里，runtime 其他层不能直接调用 tool.execute。
-  const result = await registry.execute(toolUse.name, toolUse.input, { cwd });
+  const result = await registry.execute(toolUse.name, toolUse.input, { cwd, signal });
   events.push({ type: "tool.completed", runId, step, toolUseId: toolUse.id, toolName: toolUse.name, result });
   return events;
 }

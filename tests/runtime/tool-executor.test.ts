@@ -33,6 +33,60 @@ describe("tool executor", () => {
     expect(events.at(-1)).toMatchObject({ type: "tool.completed", result: { ok: true, modelContent: "hello" } });
   });
 
+  test("emits approval events and skips ask tools without approval callback", async () => {
+    let called = false;
+    const registry = new ToolRegistry();
+    registry.register({
+      ...echoTool,
+      capabilities: ["workspace.write"],
+      async execute() {
+        called = true;
+        return { ok: true, summary: "bad", modelContent: "bad" };
+      },
+    });
+
+    const events = await executeToolCall({
+      runId: "run_1",
+      step: 1,
+      toolUse: { type: "tool_use", id: "toolu_1", name: "echo", input: { value: "hello" } },
+      registry,
+      cwd: "/workspace",
+      policyProfile: { allow: [], deny: [] },
+    });
+
+    expect(called).toBe(false);
+    expect(events.map((event) => event.type)).toEqual(["tool.requested", "policy.decision", "approval.requested", "approval.resolved", "tool.completed"]);
+    expect(events.at(-1)).toMatchObject({ type: "tool.completed", result: { ok: false, error: { code: "APPROVAL_REQUIRED" } } });
+  });
+
+  test("executes ask tools when approval callback allows once", async () => {
+    let called = false;
+    const registry = new ToolRegistry();
+    registry.register({
+      ...echoTool,
+      capabilities: ["workspace.write"],
+      async execute(input) {
+        called = true;
+        const value = String(input.value);
+        return { ok: true, summary: value, modelContent: value };
+      },
+    });
+
+    const events = await executeToolCall({
+      runId: "run_1",
+      step: 1,
+      toolUse: { type: "tool_use", id: "toolu_1", name: "echo", input: { value: "hello" } },
+      registry,
+      cwd: "/workspace",
+      policyProfile: { allow: [], deny: [] },
+      askUser: async () => "allow_once",
+    });
+
+    expect(called).toBe(true);
+    expect(events.some((event) => event.type === "approval.requested")).toBe(true);
+    expect(events.at(-1)).toMatchObject({ type: "tool.completed", result: { ok: true, modelContent: "hello" } });
+  });
+
   test("does not call a denied tool", async () => {
     let called = false;
     const registry = new ToolRegistry();
