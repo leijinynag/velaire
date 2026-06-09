@@ -22,7 +22,7 @@
   "type": "module",
   "scripts": {
     "prepublishOnly": "bun run build:bin",
-    "dev": "bun run index.ts",
+    "dev": "bun index.ts",
     "check": "tsc --noEmit && eslint . --ext .ts,.tsx && bun test",
     "check:types": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx",
