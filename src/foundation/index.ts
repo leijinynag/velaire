@@ -10,3 +10,4 @@ export type {
 } from "./messages/types";
 
 export type { TokenUsage } from "./messages/types";
+export { Model } from "./models/model";
