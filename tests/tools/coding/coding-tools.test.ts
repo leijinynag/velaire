@@ -1,7 +1,6 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
