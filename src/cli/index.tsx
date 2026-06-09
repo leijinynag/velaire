@@ -135,6 +135,7 @@ export async function createRuntimeFromConfig(config: VelaireConfig, options: Pi
     tools: preset.createTools(),
     cwd: process.cwd(),
     policyProfile: resolved.policyProfile,
+    modelName: resolved.modelEntry?.model ?? resolved.providerName,
   });
 }
 

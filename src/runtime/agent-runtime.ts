@@ -14,6 +14,7 @@ export class AgentRuntime {
   private readonly policyProfile: NonNullable<AgentRuntimeOptions["policyProfile"]>;
   private readonly middleware: NonNullable<AgentRuntimeOptions["middleware"]>;
   private readonly askUser: AgentRuntimeOptions["askUser"];
+  readonly modelName: string;
   private readonly maxSteps: number;
   private abortController: AbortController | null = null;
   readonly messages: NonSystemMessage[] = [];
@@ -26,6 +27,7 @@ export class AgentRuntime {
     this.policyProfile = options.policyProfile ?? { allow: [], deny: [] };
     this.middleware = options.middleware ?? [];
     this.askUser = options.askUser;
+    this.modelName = options.modelName ?? this.provider.name;
     this.maxSteps = options.maxSteps ?? 100;
   }
 

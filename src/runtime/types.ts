@@ -13,6 +13,7 @@ export interface AgentRuntimeOptions {
   policyProfile?: PolicyProfile;
   middleware?: AgentMiddleware[];
   askUser?: ToolCallExecutionRequest["askUser"];
+  modelName?: string;
   maxSteps?: number;
 }
 

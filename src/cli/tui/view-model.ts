@@ -9,6 +9,7 @@ export interface TuiViewModel {
   errorText: string | null;
   tokenUsage: TuiRuntimeState["tokenUsage"];
   hasPendingApproval: boolean;
+  modelName?: string;
 }
 
 export function deriveTuiViewModel(state: TuiRuntimeState): TuiViewModel {
@@ -20,6 +21,7 @@ export function deriveTuiViewModel(state: TuiRuntimeState): TuiViewModel {
     errorText: state.error?.message ?? null,
     tokenUsage: state.tokenUsage,
     hasPendingApproval: !!state.pendingApproval,
+    modelName: state.modelName,
   };
 }
 

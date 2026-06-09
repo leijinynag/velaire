@@ -14,7 +14,7 @@ import { useRuntimeEvents } from "./hooks/use-runtime-events";
 import { buildTodoViewState, getNextTodo } from "./todo-view";
 
 export function App({ commands = BUILTIN_COMMANDS, runtime }: { commands?: SlashCommand[]; runtime?: AgentRuntime }) {
-  const { state, viewModel, applyEvent } = useRuntimeEvents();
+  const { state, viewModel, applyEvent } = useRuntimeEvents({ modelName: runtime?.modelName });
   const todoView = useMemo(() => buildTodoViewState(viewModel.messages), [viewModel.messages]);
 
   const handleSubmit = useCallback((submission: PromptSubmission) => {
@@ -29,7 +29,7 @@ export function App({ commands = BUILTIN_COMMANDS, runtime }: { commands?: Slash
       <StreamingIndicator streaming={viewModel.streaming} nextTodo={getNextTodo(todoView.latestTodos)?.content} />
       <InputBox commands={commands} onSubmit={handleSubmit} onAbort={() => runtime?.abort()} />
       {todoView.latestTodos ? null : null}
-      <Footer tokenUsage={viewModel.tokenUsage} />
+      <Footer modelName={viewModel.modelName} tokenUsage={viewModel.tokenUsage} />
     </Box>
   );
 }

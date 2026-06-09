@@ -1,14 +1,19 @@
 import { Box, Text } from "ink";
 
 import type { TuiTokenUsageState } from "../runtime-reducer";
+import { currentTheme } from "../themes";
 
-export function Footer({ tokenUsage }: { tokenUsage: TuiTokenUsageState }) {
+export function Footer({ modelName, tokenUsage }: { modelName?: string; tokenUsage: TuiTokenUsageState }) {
   return (
-    <Box marginTop={1} justifyContent="space-between" width="100%">
-      <Text dimColor>/help for commands</Text>
-      <Text dimColor>
-        last input {formatCount(tokenUsage.latestInputTokens)} · session {formatCount(tokenUsage.sessionTotalTokens)}
-      </Text>
+    <Box paddingX={2} width="100%">
+      <Box flexGrow={1} justifyContent="flex-start">
+        <Text color={currentTheme.colors.dimText}>{modelName ?? "unknown model"}</Text>
+      </Box>
+      <Box justifyContent="flex-end">
+        <Text color={currentTheme.colors.dimText}>
+          last input {formatCount(tokenUsage.latestInputTokens)} · session {formatCount(tokenUsage.sessionTotalTokens)}
+        </Text>
+      </Box>
     </Box>
   );
 }

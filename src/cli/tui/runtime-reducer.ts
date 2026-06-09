@@ -35,6 +35,7 @@ export interface TuiRuntimeState {
   timeline: TimelineItem[];
   tokenUsage: TuiTokenUsageState;
   error: AgentError | null;
+  modelName?: string;
 }
 
 export function createInitialTuiState(): TuiRuntimeState {
