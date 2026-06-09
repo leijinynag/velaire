@@ -1,17 +1,17 @@
 import type { AgentMiddleware } from "@/runtime/middleware";
 
-import { loadSkills } from "./loader";
+import { discoverSkillFiles, loadSkillFrontmatter } from "./loader";
 import { SkillRegistry } from "./registry";
-import type { Skill, SkillsMiddlewareOptions } from "./types";
+import type { Skill, SkillFrontmatter, SkillsMiddlewareOptions } from "./types";
 
 function escapeAttribute(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
-export function renderSkillsPromptBlock(skills: Skill[], requestedSkillName?: string): string {
+export function renderSkillsPromptBlock(skills: SkillFrontmatter[], requestedSkillName?: string): string {
   if (skills.length === 0 && !requestedSkillName) return "";
 
-  const registry = new SkillRegistry(skills);
+  const registry = new SkillRegistry(skills as Skill[]);
   const requestedSkill = requestedSkillName ? registry.findByName(requestedSkillName) : undefined;
   const skillsXml = skills
     .map((skill) => `<skill name="${escapeAttribute(skill.name)}" path="${escapeAttribute(skill.path)}">\n${skill.description}\n</skill>`)
@@ -47,11 +47,14 @@ ${skillsXml}
 
 export function createSkillsMiddleware(options: SkillsMiddlewareOptions = {}): AgentMiddleware {
   return {
-    beforeModel: async ({ modelContext }) => {
-      const skills = await loadSkills(options);
+    beforeAgentRun: async ({ agentContext }) => {
+      const files = await discoverSkillFiles(options);
+      agentContext.skills = await Promise.all(files.map((file) => loadSkillFrontmatter(file)));
+    },
+    beforeModel: ({ modelContext, agentContext }) => {
+      const skills = Array.isArray(agentContext.skills) ? (agentContext.skills as SkillFrontmatter[]) : [];
       const skillsBlock = renderSkillsPromptBlock(skills, options.requestedSkillName);
       if (!skillsBlock) return;
-      // ProviderInvokeParams 以对象传递给 provider，middleware 直接补充 systemPrompt 即可被后续模型调用消费。
       modelContext.systemPrompt = `${modelContext.systemPrompt}\n\n${skillsBlock}`;
     },
   };

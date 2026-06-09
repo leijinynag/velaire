@@ -27,13 +27,15 @@ afterEach(() => {
 });
 
 describe("skills middleware", () => {
-  test("adds discovered skills block to the system prompt", async () => {
+  test("discovers frontmatter before the run and renders skill_system before model", async () => {
     const workspace = tempDir("velaire-workspace-");
     const skillPath = writeSkill(path.join(workspace, "skills"), "coding-plan", "Plan code changes");
     const middleware = createSkillsMiddleware({ workspace, cwd: workspace });
     const modelContext = { systemPrompt: "You are Velaire.", messages: [] };
+    const agentContext = { messages: [], systemPrompt: modelContext.systemPrompt };
 
-    await middleware.beforeModel?.({ transcript: { messages: [] }, modelContext, agentContext: { messages: [], systemPrompt: modelContext.systemPrompt } });
+    await middleware.beforeAgentRun?.({ agentContext });
+    await middleware.beforeModel?.({ transcript: { messages: [] }, modelContext, agentContext });
 
     expect(modelContext.systemPrompt).toContain("<skill_system>");
     expect(modelContext.systemPrompt).toContain('<skill name="coding-plan"');
@@ -46,8 +48,10 @@ describe("skills middleware", () => {
     const skillPath = writeSkill(path.join(workspace, "skills"), "deep-research-plan", "Plan research work");
     const middleware = createSkillsMiddleware({ workspace, cwd: workspace, requestedSkillName: "deep-research-plan" });
     const modelContext = { systemPrompt: "Base prompt", messages: [] };
+    const agentContext = { messages: [], systemPrompt: modelContext.systemPrompt };
 
-    await middleware.beforeModel?.({ transcript: { messages: [] }, modelContext, agentContext: { messages: [], systemPrompt: modelContext.systemPrompt } });
+    await middleware.beforeAgentRun?.({ agentContext });
+    await middleware.beforeModel?.({ transcript: { messages: [] }, modelContext, agentContext });
 
     expect(modelContext.systemPrompt).toContain("<explicit_skill_invocation>");
     expect(modelContext.systemPrompt).toContain('selected the skill "deep-research-plan"');

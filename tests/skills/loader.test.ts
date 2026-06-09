@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { discoverSkillFiles, loadSkill, loadSkills } from "@/skills/loader";
+import { discoverSkillFiles, loadSkill, loadSkillFrontmatter, loadSkills } from "@/skills/loader";
 
 const tempRoots: string[] = [];
 const originalVelaireHome = process.env.VELAIRE_HOME;
@@ -40,6 +40,9 @@ describe("skills loader", () => {
     const skill = await loadSkill(validPath);
 
     expect(skill).toEqual({ name: "planner", description: "Plan work", path: validPath, content: "Use a plan.\n" });
+
+    const frontmatter = await loadSkillFrontmatter(validPath);
+    expect(frontmatter).toEqual({ name: "planner", description: "Plan work", path: validPath });
 
     const invalidPath = writeSkill(root, "missing-description", { name: "bad" });
     await expect(loadSkill(invalidPath)).rejects.toThrow("Skill frontmatter in");
