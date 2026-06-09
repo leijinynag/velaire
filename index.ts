@@ -1,1 +1,3 @@
-import "./src/cli/index.tsx";
+import { main } from "./src/cli/index.tsx";
+
+await main();
