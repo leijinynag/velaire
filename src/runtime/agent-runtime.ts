@@ -83,6 +83,10 @@ export class AgentRuntime {
     this.abortController?.abort();
   }
 
+  hasApprovalHandler(): boolean {
+    return !!this.askUser;
+  }
+
   private lastModelDeltaEvents: RuntimeEvent[] = [];
 
   private async collectAssistantMessage(runId: string, step: number): Promise<AssistantMessage> {
