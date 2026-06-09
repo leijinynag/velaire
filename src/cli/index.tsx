@@ -1,24 +1,30 @@
 import { Command } from "commander";
+import { render } from "ink";
 
 import { ensureFirstRunConfig } from "@/cli/bootstrap/first-run-wizard";
 import { registerConfigModelCommands } from "@/cli/commands/config-model";
+import { App } from "@/cli/tui/app";
 import { VELAIRE_NAME, VELAIRE_VERSION } from "@/index";
+import { codingPreset } from "@/presets/coding";
 import { researchLitePreset } from "@/presets/research-lite";
-import type { AgentPreset } from "@/presets/types";
+import type { AsyncAgentPreset } from "@/presets/types";
 import { MockModelProvider } from "@/providers/mock/provider";
 import type { ModelProvider } from "@/providers/types";
 import { AgentRuntime } from "@/runtime/agent-runtime";
 
 const program = new Command();
 
-const presets = new Map<string, AgentPreset>([[researchLitePreset.name, researchLitePreset]]);
+const presets = new Map<string, AsyncAgentPreset>([
+  [researchLitePreset.name, researchLitePreset],
+  [codingPreset.name, codingPreset],
+]);
 
 program
   .name(VELAIRE_NAME)
   .description("Velaire — a general-purpose agent runtime with a built-in coding preset")
   .version(VELAIRE_VERSION, "-v, --version")
   .action(() => {
-    console.info("Velaire TUI is not implemented yet. Use --help to see available commands.");
+    render(<App />);
   });
 
 registerConfigModelCommands(program);
@@ -56,7 +62,7 @@ program
     const preset = getPreset(options.preset);
     const runtime = new AgentRuntime({
       provider,
-      systemPrompt: preset.createSystemPrompt({ cwd: process.cwd() }),
+      systemPrompt: await preset.createSystemPrompt({ cwd: process.cwd() }),
       tools: preset.createTools(),
       cwd: process.cwd(),
     });
@@ -78,7 +84,7 @@ function createProvider(name: string): ModelProvider {
   throw new Error(`Unsupported provider: ${name}`);
 }
 
-function getPreset(name: string): AgentPreset {
+function getPreset(name: string): AsyncAgentPreset {
   const preset = presets.get(name);
   if (!preset) {
     // 非交互 run 不能向用户追问，因此未知 preset 必须直接失败并给出可用值。
