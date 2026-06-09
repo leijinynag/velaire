@@ -67,6 +67,18 @@ describe("provider registry", () => {
     expect(registry.get("mock")).toBe(provider);
   });
 
+  test("creates an Anthropic provider without breaking manual mock registration", () => {
+    const registry = new ProviderRegistry();
+    const mock = new MockModelProvider();
+
+    registry.register(mock);
+    const anthropic = registry.create("anthropic", { apiKey: "test-key" });
+
+    expect(registry.get("mock")).toBe(mock);
+    expect(anthropic.name).toBe("anthropic");
+    expect(anthropic.capabilities.toolUse).toBe(true);
+  });
+
   test("rejects duplicate and unknown providers", () => {
     const registry = new ProviderRegistry();
     registry.register(new MockModelProvider());
