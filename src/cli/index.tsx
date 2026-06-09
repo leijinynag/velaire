@@ -45,8 +45,10 @@ export function createProgram(): Command {
     .name(VELAIRE_NAME)
     .description("Velaire — a general-purpose agent runtime with a built-in coding preset")
     .version(VELAIRE_VERSION, "-v, --version")
-    .action(() => {
-      render(<App />);
+    .action(async () => {
+      await ensureFirstRunConfig({});
+      const runtime = await createRuntimeFromConfig(loadConfig(), {});
+      render(<App runtime={runtime} />);
     });
 
   registerConfigModelCommands(program);
@@ -71,7 +73,7 @@ export async function main(argv = process.argv): Promise<void> {
   await createProgram().parseAsync(argv);
 }
 
-export function resolveRunConfiguration(options: Pick<RunCommandOptions, "provider" | "preset" | "modelName" | "prompt">, config: VelaireConfig): ResolvedRunConfiguration {
+export function resolveRunConfiguration(options: Pick<RunCommandOptions, "provider" | "preset" | "modelName">, config: VelaireConfig): ResolvedRunConfiguration {
   const modelEntry = options.provider === "mock" ? undefined : resolveModelEntry(options.modelName, config);
   const providerName = options.provider ?? modelEntry?.provider ?? "mock";
   const presetName = options.preset ?? config.agent.defaultPreset;
@@ -113,16 +115,7 @@ async function runOnce(options: RunCommandOptions): Promise<void> {
   });
 
   const config = loadConfig();
-  const resolved = resolveRunConfiguration(options, config);
-  const provider = createProvider(resolved.providerName, resolved.modelEntry);
-  const preset = getPreset(resolved.presetName);
-  const runtime = new AgentRuntime({
-    provider,
-    systemPrompt: await preset.createSystemPrompt({ cwd: process.cwd() }),
-    tools: preset.createTools(),
-    cwd: process.cwd(),
-    policyProfile: resolved.policyProfile,
-  });
+  const runtime = await createRuntimeFromConfig(config, options);
 
   for await (const event of runtime.run(options.prompt)) {
     if (event.type === "model.delta" && event.delta.type === "text_delta") {
@@ -130,6 +123,19 @@ async function runOnce(options: RunCommandOptions): Promise<void> {
     }
   }
   process.stdout.write("\n");
+}
+
+export async function createRuntimeFromConfig(config: VelaireConfig, options: Pick<RunCommandOptions, "provider" | "preset" | "modelName">): Promise<AgentRuntime> {
+  const resolved = resolveRunConfiguration(options, config);
+  const provider = createProvider(resolved.providerName, resolved.modelEntry);
+  const preset = getPreset(resolved.presetName);
+  return new AgentRuntime({
+    provider,
+    systemPrompt: await preset.createSystemPrompt({ cwd: process.cwd() }),
+    tools: preset.createTools(),
+    cwd: process.cwd(),
+    policyProfile: resolved.policyProfile,
+  });
 }
 
 function resolveModelEntry(modelName: string | undefined, config: VelaireConfig): ModelEntry {

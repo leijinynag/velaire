@@ -29,7 +29,7 @@ describe("CLI provider configuration", () => {
 
   test("resolves default model and preset from config when run options omit provider and preset", () => {
     const resolved = resolveRunConfiguration(
-      { prompt: "hello" },
+      {},
       {
         version: 1,
         defaultModel: "claude",
