@@ -4,7 +4,7 @@ import { BUILTIN_COMMANDS, formatHelp, resolveBuiltinCommand } from "@/cli/tui/c
 
 describe("TUI slash command registry", () => {
   test("includes clear help exit and quit builtins", () => {
-    expect(BUILTIN_COMMANDS.map((command) => command.name)).toEqual(["clear", "help", "exit", "quit"]);
+    expect(BUILTIN_COMMANDS.map((command) => command.name)).toEqual(["clear", "exit", "help", "quit"]);
   });
 
   test("resolves builtin slash commands with arguments", () => {

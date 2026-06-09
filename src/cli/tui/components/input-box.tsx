@@ -1,43 +1,47 @@
-import { Box, Text, useInput, useStdin } from "ink";
-import { useCallback, useState } from "react";
+import { Box, Text } from "ink";
 
-export function InputBox({ onSubmit, onAbort }: { onSubmit: (text: string) => void; onAbort?: () => void }) {
-  const [text, setText] = useState("");
-  const { isRawModeSupported } = useStdin();
+import type { PromptSubmission, SlashCommand } from "../command-registry";
+import { useCommandInput } from "../hooks/use-command-input";
+import { currentTheme } from "../themes";
 
-  const submit = useCallback(() => {
-    const value = text.trim();
-    if (!value) return;
-    setText("");
-    onSubmit(value);
-  }, [onSubmit, text]);
+import { CommandList } from "./command-list";
+import { HighlightedInput } from "./highlighted-input";
 
-  useInput((input, key) => {
-    if (key.return) {
-      submit();
-      return;
-    }
-    if (key.escape) {
-      onAbort?.();
-      return;
-    }
-    if (key.backspace || key.delete) {
-      setText((current) => current.slice(0, -1));
-      return;
-    }
-    if (key.ctrl && input.toLowerCase() === "c") {
-      onAbort?.();
-      process.exit(0);
-    }
-    // Ink 会把方向键等控制输入也传进来；只接收可打印字符，避免污染命令文本。
-    if (input && !key.ctrl && !key.meta && input >= " ") {
-      setText((current) => current + input);
-    }
-  }, { isActive: Boolean(isRawModeSupported) });
+export function InputBox({
+  commands,
+  onSubmit,
+  onAbort,
+}: {
+  commands: SlashCommand[];
+  // eslint-disable-next-line no-unused-vars
+  onSubmit?: (submission: PromptSubmission) => void;
+  onAbort?: () => void;
+}) {
+  const { filteredCommands, highlightedCommandName, pickerOpen, placeholder, selectedIndex, text, cursorOffset } =
+    useCommandInput({
+      commands,
+      onSubmit,
+      onAbort,
+    });
 
   return (
-    <Box borderStyle="single" borderColor="gray" paddingX={1} marginTop={1}>
-      <Text>› {text || "Type a prompt or /help"}</Text>
+    <Box flexDirection="column" rowGap={1}>
+      {pickerOpen ? <CommandList commands={filteredCommands} selectedIndex={selectedIndex} /> : null}
+      <Box
+        borderLeft={false}
+        borderRight={false}
+        borderStyle="single"
+        borderColor={currentTheme.colors.borderColor}
+        columnGap={1}
+      >
+        <Text>❯</Text>
+        <HighlightedInput
+          cursorOffset={cursorOffset}
+          highlightedCommandName={highlightedCommandName}
+          placeholder={placeholder}
+          value={text}
+        />
+      </Box>
     </Box>
   );
 }

@@ -1,36 +1,40 @@
 import { Box } from "ink";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 
 import type { RuntimeEvent } from "@/foundation/events/types";
 import type { AgentRuntime } from "@/runtime/agent-runtime";
 
-import { formatHelp, resolveBuiltinCommand } from "./command-registry";
+import { BUILTIN_COMMANDS, formatHelp, resolveBuiltinCommand, type PromptSubmission, type SlashCommand } from "./command-registry";
 import { Footer } from "./components/footer";
 import { Header } from "./components/header";
 import { InputBox } from "./components/input-box";
 import { MessageHistory } from "./components/message-history";
 import { StreamingIndicator } from "./components/streaming-indicator";
 import { useRuntimeEvents } from "./hooks/use-runtime-events";
+import { buildTodoViewState } from "./todo-view";
 
-export function App({ runtime }: { runtime?: AgentRuntime }) {
+export function App({ commands = BUILTIN_COMMANDS, runtime }: { commands?: SlashCommand[]; runtime?: AgentRuntime }) {
   const { state, viewModel, applyEvent } = useRuntimeEvents();
+  const todoView = useMemo(() => buildTodoViewState(viewModel.messages), [viewModel.messages]);
 
-  const handleSubmit = useCallback((text: string) => {
-    void handleSubmittedText(text, runtime, applyEvent);
-  }, [applyEvent, runtime]);
+  const handleSubmit = useCallback((submission: PromptSubmission) => {
+    void handleSubmittedText(submission.text, runtime, applyEvent, commands);
+  }, [applyEvent, commands, runtime]);
 
   return (
     <Box flexDirection="column" width="100%">
       {state.messages.length === 0 ? <Header /> : null}
-      <MessageHistory messages={viewModel.messages.filter((message) => message.role !== "user" || message.content.some((block) => block.type !== "text" || block.text))} errorText={viewModel.errorText} />
+      <MessageHistory messages={viewModel.messages} todoSnapshots={todoView.todoSnapshots} />
+      {viewModel.errorText ? <Box paddingX={2}>Provider error: {viewModel.errorText}</Box> : null}
       <StreamingIndicator streaming={viewModel.streaming} />
-      <InputBox onSubmit={handleSubmit} onAbort={() => runtime?.abort()} />
+      <InputBox commands={commands} onSubmit={handleSubmit} onAbort={() => runtime?.abort()} />
+      {todoView.latestTodos ? null : null}
       <Footer tokenUsage={viewModel.tokenUsage} />
     </Box>
   );
 }
 
-export async function handleSubmittedText(text: string, runtime: AgentRuntime | undefined, applyEvent: (event: RuntimeEvent) => void): Promise<void> {
+export async function handleSubmittedText(text: string, runtime: AgentRuntime | undefined, applyEvent: (event: RuntimeEvent) => void, commands: SlashCommand[] = BUILTIN_COMMANDS): Promise<void> {
   const command = resolveBuiltinCommand(text);
   if (command?.name === "exit" || command?.name === "quit") {
     process.exit(0);
@@ -48,7 +52,7 @@ export async function handleSubmittedText(text: string, runtime: AgentRuntime | 
       type: "model.message.completed",
       runId,
       step: 1,
-      message: { role: "assistant", content: [{ type: "text", text: formatHelp() }] },
+      message: { role: "assistant", content: [{ type: "text", text: formatHelp(commands, command.args || undefined) }] },
     });
     applyEvent({ type: "agent.run.completed", runId });
     return;
