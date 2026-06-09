@@ -1,4 +1,4 @@
-import path from "node:path";
+import { ensureWithinDirectory } from "@/tools/workspace/utils";
 
 import type { PolicyDecision, PolicyProfile, PolicyRequest } from "./types";
 
@@ -31,21 +31,15 @@ export function evaluatePolicy(request: PolicyRequest, profile: PolicyProfile = 
 }
 
 function writesOutsideWorkspace(request: PolicyRequest): boolean {
-  const candidate = firstPathInput(request.input);
-  if (!candidate || !path.isAbsolute(candidate)) {
-    return false;
-  }
-  const relative = path.relative(request.cwd, candidate);
-  // path.relative 以 .. 开头表示逃出 workspace，绝对路径表示 Windows 跨盘符场景。
-  return relative.startsWith("..") || path.isAbsolute(relative);
+  // 所有写相关路径都必须留在 workspace 内，尤其是 move_path 的 from/to 双路径。
+  return pathInputs(request.input).some((candidate) => ensureWithinDirectory(request.cwd, candidate).ok === false);
 }
 
-function firstPathInput(input: Record<string, unknown>): string | null {
-  for (const key of ["file_path", "path", "target", "destination"]) {
+function pathInputs(input: Record<string, unknown>): string[] {
+  const values: string[] = [];
+  for (const key of ["file_path", "path", "target", "destination", "from", "to"]) {
     const value = input[key];
-    if (typeof value === "string") {
-      return value;
-    }
+    if (typeof value === "string") values.push(value);
   }
-  return null;
+  return values;
 }

@@ -1,5 +1,5 @@
 import { stat } from "node:fs/promises";
-import { isAbsolute } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 
 export const DEFAULT_MAX_CHARS = 12_000;
 export const DEFAULT_LIMIT = 200;
@@ -25,6 +25,18 @@ export async function ensureDirectoryPath(path: string): Promise<{ ok: true } | 
     const message = error instanceof Error ? error.message : String(error);
     return { ok: false, message: `Directory is not accessible: ${path}. ${message}` };
   }
+}
+
+export function isWithinDirectory(root: string, target: string): boolean {
+  const relativePath = relative(resolve(root), resolve(target));
+  return relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath));
+}
+
+export function ensureWithinDirectory(root: string, target: string): { ok: true } | { ok: false; message: string } {
+  const absolute = ensureAbsolutePath(target);
+  if (!absolute.ok) return absolute;
+  if (!isWithinDirectory(root, target)) return { ok: false, message: `Path is outside the workspace: ${target}` };
+  return { ok: true };
 }
 
 export function truncateText(text: string, maxChars = DEFAULT_MAX_CHARS): { text: string; truncated: boolean; originalLength: number } {

@@ -34,6 +34,18 @@ describe("policy engine", () => {
     expect(decision).toMatchObject({ decision: "deny", reason: "Tool writes outside the workspace" });
   });
 
+  test("checks every write path for move_path operations", () => {
+    expect(
+      evaluatePolicy(request({ toolName: "move_path", capabilities: ["workspace.write"], input: { from: "/workspace/a", to: "/etc/a" } })),
+    ).toMatchObject({ decision: "deny", reason: "Tool writes outside the workspace" });
+    expect(
+      evaluatePolicy(request({ toolName: "move_path", capabilities: ["workspace.write"], input: { from: "/etc/a", to: "/workspace/a" } })),
+    ).toMatchObject({ decision: "deny", reason: "Tool writes outside the workspace" });
+    expect(
+      evaluatePolicy(request({ toolName: "move_path", capabilities: ["workspace.write"], input: { from: "/workspace/a", to: "/workspace/b" } })),
+    ).toMatchObject({ decision: "ask" });
+  });
+
   test("honors explicit allow and deny rules", () => {
     expect(evaluatePolicy(request({ toolName: "bash" }), { allow: ["bash"], deny: [] }).decision).toBe("allow");
     expect(evaluatePolicy(request({ toolName: "bash" }), { allow: [], deny: ["bash"] }).decision).toBe("deny");

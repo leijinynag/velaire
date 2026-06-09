@@ -1,4 +1,5 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import { createCodingTools, createTodoSystem, createTodoWriteTool, createAskUserQuestionTool } from "@/tools/coding";
 import type { ToolDefinition } from "@/tools/types";
+import { ensureWithinDirectory, isWithinDirectory } from "@/tools/workspace/utils";
 
 let workspace: string;
 
@@ -55,6 +57,16 @@ describe("coding tool registry", () => {
 });
 
 describe("workspace tools", () => {
+  test("workspace path helpers validate directory containment without prefix bypasses", () => {
+    const root = resolve(workspace, "root");
+    expect(isWithinDirectory(root, root)).toBe(true);
+    expect(isWithinDirectory(root, resolve(root, "child", "file.ts"))).toBe(true);
+    expect(isWithinDirectory(root, resolve(root, "..", "escape.ts"))).toBe(false);
+    expect(isWithinDirectory(root, `${root}2/file.ts`)).toBe(false);
+    expect(ensureWithinDirectory(root, resolve(root, "child.ts"))).toEqual({ ok: true });
+    expect(ensureWithinDirectory(root, resolve(root, "..", "escape.ts"))).toMatchObject({ ok: false });
+  });
+
   test("read_file reads selected lines and rejects invalid ranges", async () => {
     const filePath = join(workspace, "example.txt");
     await writeFile(filePath, "alpha\nbeta\ngamma");
