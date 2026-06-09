@@ -60,7 +60,7 @@ export default defineConfig(
       ],
       "no-case-declarations": "off",
       "no-console": ["warn", { "allow": ["info", "warn", "error"] }],
-      "no-unused-vars": "warn"
+      "no-unused-vars": "off"
     }
   },
   prettier,

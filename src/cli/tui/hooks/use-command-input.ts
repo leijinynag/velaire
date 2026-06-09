@@ -39,7 +39,6 @@ export function useCommandInput({
   onAbort,
 }: {
   commands: SlashCommand[];
-  // eslint-disable-next-line no-unused-vars
   onSubmit?: (submission: PromptSubmission) => void;
   onAbort?: () => void;
 }) {
