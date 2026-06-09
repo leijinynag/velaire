@@ -25,8 +25,9 @@ export function App({ approvalManager, commands = BUILTIN_COMMANDS, runtime }: {
   }, [approvalManager]);
 
   const handleSubmit = useCallback((submission: PromptSubmission) => {
+    if (!canSubmitPrompt({ hasPendingApproval: !!approvalRequest, streaming: viewModel.streaming })) return;
     void handleSubmittedText(submission.text, runtime, applyEvent, commands);
-  }, [applyEvent, commands, runtime]);
+  }, [applyEvent, approvalRequest, commands, runtime, viewModel.streaming]);
 
   return (
     <Box flexDirection="column" width="100%">
@@ -42,6 +43,10 @@ export function App({ approvalManager, commands = BUILTIN_COMMANDS, runtime }: {
       <Footer modelName={viewModel.modelName} tokenUsage={viewModel.tokenUsage} />
     </Box>
   );
+}
+
+export function canSubmitPrompt({ hasPendingApproval, streaming }: { hasPendingApproval: boolean; streaming: boolean }): boolean {
+  return !hasPendingApproval && !streaming;
 }
 
 export async function handleSubmittedText(text: string, runtime: AgentRuntime | undefined, applyEvent: (event: RuntimeEvent) => void, commands: SlashCommand[] = BUILTIN_COMMANDS): Promise<void> {
