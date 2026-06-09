@@ -1,3 +1,4 @@
+import type { Model } from "@/foundation";
 import type { NonSystemMessage, ToolUseContentBlock } from "@/foundation/messages/types";
 import type { ApprovalDecision, PolicyProfile } from "@/policy/types";
 import type { ModelProvider } from "@/providers/types";
@@ -7,7 +8,8 @@ import type { ToolExecutionResult } from "@/tools/types";
 import type { AgentMiddleware } from "./middleware";
 
 export interface AgentRuntimeOptions {
-  provider: ModelProvider;
+  provider?: ModelProvider;
+  model?: Model;
   systemPrompt: string;
   tools: ToolRegistry;
   cwd?: string;

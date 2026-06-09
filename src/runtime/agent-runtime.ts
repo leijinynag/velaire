@@ -1,3 +1,4 @@
+import { Model } from "@/foundation";
 import type { RuntimeEvent } from "@/foundation/events/types";
 import type { AssistantMessage, NonSystemMessage, ToolMessage, ToolUseContentBlock, UserMessage } from "@/foundation/messages/types";
 import type { ModelStreamEvent, ProviderInvokeParams } from "@/providers/types";
@@ -9,7 +10,7 @@ import { executeToolCall } from "./tool-executor";
 import type { AgentRuntimeOptions } from "./types";
 
 export class AgentRuntime {
-  private readonly provider: AgentRuntimeOptions["provider"];
+  private readonly model: Model<Record<string, unknown>>;
   private readonly systemPrompt: string;
   private readonly tools: AgentRuntimeOptions["tools"];
   private readonly cwd: string;
@@ -23,14 +24,14 @@ export class AgentRuntime {
   private readonly agentContext: AgentContext;
 
   constructor(options: AgentRuntimeOptions) {
-    this.provider = options.provider;
+    this.model = options.model ?? new Model(options.modelName ?? options.provider!.name, options.provider!);
     this.systemPrompt = options.systemPrompt;
     this.tools = options.tools;
     this.cwd = options.cwd ?? process.cwd();
     this.policyProfile = options.policyProfile ?? { allow: [], deny: [] };
     this.middleware = options.middleware ?? [];
     this.askUser = options.askUser;
-    this.modelName = options.modelName ?? this.provider.name;
+    this.modelName = options.modelName ?? this.model.name;
     this.maxSteps = options.maxSteps ?? 100;
     this.agentContext = { messages: this.messages, systemPrompt: this.systemPrompt };
   }
@@ -48,7 +49,7 @@ export class AgentRuntime {
         this.abortController.signal.throwIfAborted();
         await this.runAgentContextHook("beforeAgentStep", step);
         yield { type: "agent.step.started", runId, step };
-        yield { type: "model.request.started", runId, step, model: this.provider.name };
+        yield { type: "model.request.started", runId, step, model: this.model.name };
 
         const assistantMessage = await this.collectAssistantMessage(runId, step);
         for (const event of this.lastModelDeltaEvents) {
@@ -89,10 +90,11 @@ export class AgentRuntime {
     const content: AssistantMessage["content"] = [];
     let text = "";
     let usage: AssistantMessage["usage"];
-    const modelContext: ProviderInvokeParams = {
+    const modelContext: ProviderInvokeParams<Record<string, unknown>> = {
       systemPrompt: this.agentContext.systemPrompt,
       messages: this.messages,
       tools: this.tools.list(),
+      options: {},
       signal: this.abortController?.signal,
     };
 
@@ -101,7 +103,7 @@ export class AgentRuntime {
       if (result) Object.assign(modelContext, result);
     }
 
-    for await (const event of this.provider.stream(modelContext)) {
+    for await (const event of this.model.stream(modelContext)) {
       this.handleModelEvent(event, runId, step, content, (value) => {
         text += value;
       });

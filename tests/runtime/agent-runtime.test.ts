@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 
+import { Model } from "@/foundation";
 import { MockModelProvider } from "@/providers/mock/provider";
 import { AgentRuntime } from "@/runtime/agent-runtime";
 import { ToolRegistry } from "@/tools/registry";
@@ -18,6 +19,21 @@ const echoTool: ToolDefinition<{ value: string }> = {
 };
 
 describe("agent runtime", () => {
+  test("accepts a Model wrapper for cleaner provider invocation", async () => {
+    const runtime = new AgentRuntime({
+      model: new Model("mock-model", new MockModelProvider({ events: [{ type: "message_start" }, { type: "text_delta", text: "hello" }, { type: "message_stop" }] })),
+      systemPrompt: "You are Velaire.",
+      tools: new ToolRegistry(),
+    });
+
+    for await (const _event of runtime.run("hi")) {
+      // consume stream
+    }
+
+    expect(runtime.modelName).toBe("mock-model");
+    expect(runtime.messages.at(-1)).toEqual({ role: "assistant", content: [{ type: "text", text: "hello" }] });
+  });
+
   test("runs a text-only conversation", async () => {
     const runtime = new AgentRuntime({
       provider: new MockModelProvider({ events: [{ type: "message_start" }, { type: "text_delta", text: "hello" }, { type: "message_stop" }] }),
