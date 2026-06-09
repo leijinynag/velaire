@@ -9,18 +9,33 @@ import { createRunId } from "./session";
 import { executeToolCall } from "./tool-executor";
 import type { AgentRuntimeOptions } from "./types";
 
+/**
+ * Agent 运行时类，负责编排 Agent 的主循环：接收用户输入、调用模型、执行工具、触发中间件回调等。
+ */
 export class AgentRuntime {
+  /** 内部使用的模型实例 */
   private readonly model: Model<Record<string, unknown>>;
+  /** 系统提示词 */
   private readonly systemPrompt: string;
+  /** 工具注册表 */
   private readonly tools: AgentRuntimeOptions["tools"];
+  /** 当前工作目录 */
   private readonly cwd: string;
+  /** 策略配置，控制工具的允许/拒绝列表 */
   private readonly policyProfile: NonNullable<AgentRuntimeOptions["policyProfile"]>;
+  /** 中间件列表，用于拦截各生命周期节点 */
   private readonly middleware: NonNullable<AgentRuntimeOptions["middleware"]>;
+  /** 用户确认处理器，用于需要人工审批的工具调用 */
   private readonly askUser: AgentRuntimeOptions["askUser"];
+  /** 模型名称（对外暴露） */
   readonly modelName: string;
+  /** 最大执行步数，防止无限循环 */
   private readonly maxSteps: number;
+  /** 用于主动中断运行的 AbortController 实例 */
   private abortController: AbortController | null = null;
+  /** 历史消息记录（不含 system 消息） */
   readonly messages: NonSystemMessage[] = [];
+  /** Agent 上下文，供中间件读写 */
   private readonly agentContext: AgentContext;
 
   constructor(options: AgentRuntimeOptions) {
@@ -36,6 +51,10 @@ export class AgentRuntime {
     this.agentContext = { messages: this.messages, systemPrompt: this.systemPrompt };
   }
 
+  /**
+   * 启动 Agent 运行的主入口，接收用户输入，按步骤循环调用模型并执行工具，通过 AsyncIterable 产出运行时事件。
+   * @param input - 用户输入文本
+   */
   async *run(input: string): AsyncIterable<RuntimeEvent> {
     const runId = createRunId();
     this.abortController = new AbortController();
@@ -56,19 +75,23 @@ export class AgentRuntime {
           yield event;
         }
         this.messages.push(assistantMessage);
+        // 调用 afterModel 中间件，允许对 assistant 消息做后处理
         for (const middleware of this.middleware) {
           const result = await middleware.afterModel?.({ transcript: { messages: this.messages }, message: assistantMessage, agentContext: this.agentContext });
           if (result) Object.assign(assistantMessage, result);
         }
         yield { type: "model.message.completed", runId, step, message: assistantMessage };
 
+        // 提取 assistant 消息中的工具调用
         const toolUses = assistantMessage.content.filter((content): content is ToolUseContentBlock => content.type === "tool_use");
         if (toolUses.length === 0) {
+          // 没有工具调用，运行结束
           await this.runAgentContextHook("afterAgentRun");
           yield { type: "agent.run.completed", runId };
           return;
         }
 
+        // 执行工具调用并产出相关事件
         yield* this.executeToolUses(runId, step, toolUses);
         await this.runAgentContextHook("afterAgentStep", step);
       }
@@ -79,16 +102,22 @@ export class AgentRuntime {
     }
   }
 
+  /** 中断当前运行 */
   abort(): void {
     this.abortController?.abort();
   }
 
+  /** 是否配置了用户确认处理器 */
   hasApprovalHandler(): boolean {
     return !!this.askUser;
   }
 
+  /** 最近一次模型调用产生的增量事件缓存 */
   private lastModelDeltaEvents: RuntimeEvent[] = [];
 
+  /**
+   * 收集一次完整的 assistant 消息：流式读取模型输出，组装内容块、文本和用量信息。
+   */
   private async collectAssistantMessage(runId: string, step: number): Promise<AssistantMessage> {
     this.lastModelDeltaEvents = [];
     const content: AssistantMessage["content"] = [];
@@ -102,6 +131,7 @@ export class AgentRuntime {
       signal: this.abortController?.signal,
     };
 
+    // beforeModel 中间件可修改模型调用参数
     for (const middleware of this.middleware) {
       const result = await middleware.beforeModel?.({ transcript: { messages: this.messages }, modelContext, agentContext: this.agentContext });
       if (result) Object.assign(modelContext, result);
@@ -118,6 +148,9 @@ export class AgentRuntime {
     return { role: "assistant", content, ...(usage ? { usage } : {}) };
   }
 
+  /**
+   * 并行执行多个工具调用，按完成顺序产出事件，并将结果作为 ToolMessage 追加到消息历史。
+   */
   private async *executeToolUses(runId: string, step: number, toolUses: ToolUseContentBlock[]): AsyncIterable<RuntimeEvent> {
     const pending = toolUses.map(async (toolUse, index) => {
       const beforeResult = await this.runBeforeToolUse(toolUse);
@@ -137,6 +170,7 @@ export class AgentRuntime {
       return { index, toolUse, events };
     });
 
+    // 使用 Promise.race 按完成顺序消费
     const remaining = new Set(pending.map((_, index) => index));
     while (remaining.size > 0) {
       const completed = await Promise.race([...remaining].map((index) => pending[index]!));
@@ -153,6 +187,9 @@ export class AgentRuntime {
     }
   }
 
+  /**
+   * 触发所有中间件上的指定生命周期钩子。
+   */
   private async runAgentContextHook(hook: "beforeAgentRun" | "afterAgentRun" | "beforeAgentStep" | "afterAgentStep", step?: number): Promise<void> {
     for (const middleware of this.middleware) {
       const fn = middleware[hook];
@@ -161,6 +198,9 @@ export class AgentRuntime {
     }
   }
 
+  /**
+   * 执行 beforeToolUse 中间件，允许中间件短路跳过实际工具执行并返回预设结果。
+   */
   private async runBeforeToolUse(toolUse: ToolUseContentBlock): Promise<{ skip: true; result: ToolExecutionResult } | { skip: false }> {
     for (const middleware of this.middleware) {
       const result: BeforeToolUseResult = await middleware.beforeToolUse?.({ agentContext: this.agentContext, toolUse });
@@ -172,6 +212,9 @@ export class AgentRuntime {
     return { skip: false };
   }
 
+  /**
+   * 执行 afterToolUse 中间件，允许中间件对工具执行结果做后处理。
+   */
   private async runAfterToolUse(toolUse: ToolUseContentBlock, toolResult: ToolExecutionResult): Promise<void> {
     for (const middleware of this.middleware) {
       const result = await middleware.afterToolUse?.({ agentContext: this.agentContext, toolUse, toolResult });
@@ -179,6 +222,9 @@ export class AgentRuntime {
     }
   }
 
+  /**
+   * 处理模型流式事件，将 text_delta / tool_use / usage 分别转换为运行时增量事件，并填充 assistant 消息内容。
+   */
   private handleModelEvent(event: ModelStreamEvent, runId: string, step: number, content: AssistantMessage["content"], appendText: (text: string) => void): void {
     if (event.type === "text_delta") {
       appendText(event.text);

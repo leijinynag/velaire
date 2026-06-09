@@ -9,16 +9,19 @@ import { HighlightedInput } from "./highlighted-input";
 
 export function InputBox({
   commands,
+  isActive = true,
   onSubmit,
   onAbort,
 }: {
   commands: SlashCommand[];
+  isActive?: boolean;
   onSubmit?: (submission: PromptSubmission) => void;
   onAbort?: () => void;
 }) {
   const { filteredCommands, highlightedCommandName, pickerOpen, placeholder, selectedIndex, text, cursorOffset } =
     useCommandInput({
       commands,
+      isActive,
       onSubmit,
       onAbort,
     });

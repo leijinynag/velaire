@@ -35,10 +35,12 @@ const WELCOME_MESSAGES = [
 
 export function useCommandInput({
   commands,
+  isActive = true,
   onSubmit,
   onAbort,
 }: {
   commands: SlashCommand[];
+  isActive?: boolean;
   onSubmit?: (submission: PromptSubmission) => void;
   onAbort?: () => void;
 }) {
@@ -169,7 +171,7 @@ export function useCommandInput({
       exitBrowsing();
       updateEditorState(insertTextAtCursor(editorState, input));
     },
-    { isActive: true },
+    { isActive },
   );
 
   return {

@@ -38,15 +38,19 @@ export function App({ approvalManager, commands = BUILTIN_COMMANDS, runtime }: {
       ) : null}
       {viewModel.errorText ? <Box paddingX={2}><Text color="red">Provider error: {viewModel.errorText}</Text></Box> : null}
       <StreamingIndicator streaming={viewModel.streaming} nextTodo={getNextTodo(todoView.latestTodos)?.content} />
-      <InputBox commands={commands} onSubmit={handleSubmit} onAbort={() => runtime?.abort()} />
+      <InputBox commands={commands} isActive={isInputActive({ hasPendingApproval: !!approvalRequest, streaming: viewModel.streaming })} onSubmit={handleSubmit} onAbort={() => runtime?.abort()} />
       {todoView.latestTodos ? null : null}
       <Footer modelName={viewModel.modelName} tokenUsage={viewModel.tokenUsage} />
     </Box>
   );
 }
 
-export function canSubmitPrompt({ hasPendingApproval, streaming }: { hasPendingApproval: boolean; streaming: boolean }): boolean {
+export function isInputActive({ hasPendingApproval, streaming }: { hasPendingApproval: boolean; streaming: boolean }): boolean {
   return !hasPendingApproval && !streaming;
+}
+
+export function canSubmitPrompt(state: { hasPendingApproval: boolean; streaming: boolean }): boolean {
+  return isInputActive(state);
 }
 
 export async function handleSubmittedText(text: string, runtime: AgentRuntime | undefined, applyEvent: (event: RuntimeEvent) => void, commands: SlashCommand[] = BUILTIN_COMMANDS): Promise<void> {
