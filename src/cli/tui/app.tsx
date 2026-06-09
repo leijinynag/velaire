@@ -1,7 +1,8 @@
 import { Box, Text } from "ink";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { RuntimeEvent } from "@/foundation/events/types";
+import type { ApprovalManager } from "@/policy/approval-manager";
 import type { AgentRuntime } from "@/runtime/agent-runtime";
 
 import { BUILTIN_COMMANDS, formatHelp, resolveBuiltinCommand, type PromptSubmission, type SlashCommand } from "./command-registry";
@@ -14,9 +15,14 @@ import { StreamingIndicator } from "./components/streaming-indicator";
 import { useRuntimeEvents } from "./hooks/use-runtime-events";
 import { buildTodoViewState, getNextTodo } from "./todo-view";
 
-export function App({ commands = BUILTIN_COMMANDS, runtime }: { commands?: SlashCommand[]; runtime?: AgentRuntime }) {
+export function App({ approvalManager, commands = BUILTIN_COMMANDS, runtime }: { approvalManager?: ApprovalManager; commands?: SlashCommand[]; runtime?: AgentRuntime }) {
   const { state, viewModel, applyEvent } = useRuntimeEvents({ modelName: runtime?.modelName });
   const todoView = useMemo(() => buildTodoViewState(viewModel.messages), [viewModel.messages]);
+  const [approvalRequest, setApprovalRequest] = useState(() => approvalManager?.currentRequest ?? null);
+
+  useEffect(() => {
+    return approvalManager?.subscribe(setApprovalRequest);
+  }, [approvalManager]);
 
   const handleSubmit = useCallback((submission: PromptSubmission) => {
     void handleSubmittedText(submission.text, runtime, applyEvent, commands);
@@ -26,12 +32,8 @@ export function App({ commands = BUILTIN_COMMANDS, runtime }: { commands?: Slash
     <Box flexDirection="column" width="100%">
       {state.messages.length === 0 ? <Header modelName={viewModel.modelName} /> : null}
       <MessageHistory messages={viewModel.messages} todoSnapshots={todoView.todoSnapshots} />
-      {state.pendingApproval?.toolName && state.pendingApproval.resolve ? (
-        <ApprovalPrompt
-          request={{ toolUseId: state.pendingApproval.toolUseId, toolName: state.pendingApproval.toolName, input: state.pendingApproval.input ?? {} }}
-          supportProjectWideAllow
-          onDecision={state.pendingApproval.resolve}
-        />
+      {approvalRequest ? (
+        <ApprovalPrompt request={approvalRequest} supportProjectWideAllow onDecision={(decision) => approvalManager?.respond(decision)} />
       ) : null}
       {viewModel.errorText ? <Box paddingX={2}><Text color="red">Provider error: {viewModel.errorText}</Text></Box> : null}
       <StreamingIndicator streaming={viewModel.streaming} nextTodo={getNextTodo(todoView.latestTodos)?.content} />

@@ -3,11 +3,15 @@ import type { ApprovalDecision, ApprovalRequest, ApprovalRequestInput } from "./
 export class ApprovalManager {
   private readonly maxQueueSize: number;
   private queue: ApprovalRequest[] = [];
-  private currentRequest?: ApprovalRequest;
+  private request?: ApprovalRequest;
   private subscriber?: (request: ApprovalRequest | null) => void;
 
   constructor({ maxQueueSize = 20 }: { maxQueueSize?: number } = {}) {
     this.maxQueueSize = maxQueueSize;
+  }
+
+  get currentRequest(): ApprovalRequest | undefined {
+    return this.request;
   }
 
   requestApproval(input: ApprovalRequestInput): Promise<ApprovalDecision> {
@@ -22,11 +26,9 @@ export class ApprovalManager {
   }
 
   respond(decision: ApprovalDecision): void {
-    if (!this.currentRequest) {
-      return;
-    }
-    this.currentRequest.resolve(decision);
-    this.currentRequest = undefined;
+    if (!this.request) return;
+    this.request.resolve(decision);
+    this.request = undefined;
     this.processQueue();
   }
 
@@ -39,10 +41,8 @@ export class ApprovalManager {
   }
 
   private processQueue(): void {
-    if (this.currentRequest) {
-      return;
-    }
-    this.currentRequest = this.queue.shift();
-    this.subscriber?.(this.currentRequest ?? null);
+    if (this.request) return;
+    this.request = this.queue.shift();
+    this.subscriber?.(this.request ?? null);
   }
 }

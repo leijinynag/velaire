@@ -7,6 +7,7 @@ import { App } from "@/cli/tui/app";
 import { loadConfig } from "@/config/load";
 import type { ModelEntry, VelaireConfig } from "@/config/types";
 import { VELAIRE_NAME, VELAIRE_VERSION } from "@/index";
+import { ApprovalManager } from "@/policy/approval-manager";
 import type { PolicyProfile } from "@/policy/types";
 import { codingPreset } from "@/presets/coding";
 import { researchLitePreset } from "@/presets/research-lite";
@@ -47,8 +48,9 @@ export function createProgram(): Command {
     .version(VELAIRE_VERSION, "-v, --version")
     .action(async () => {
       await ensureFirstRunConfig({});
-      const runtime = await createRuntimeFromConfig(loadConfig(), {});
-      render(<App runtime={runtime} />);
+      const approvalManager = new ApprovalManager();
+      const runtime = await createRuntimeFromConfig(loadConfig(), {}, { approvalManager });
+      render(<App approvalManager={approvalManager} runtime={runtime} />);
     });
 
   registerConfigModelCommands(program);
@@ -125,7 +127,11 @@ async function runOnce(options: RunCommandOptions): Promise<void> {
   process.stdout.write("\n");
 }
 
-export async function createRuntimeFromConfig(config: VelaireConfig, options: Pick<RunCommandOptions, "provider" | "preset" | "modelName">): Promise<AgentRuntime> {
+export async function createRuntimeFromConfig(
+  config: VelaireConfig,
+  options: Pick<RunCommandOptions, "provider" | "preset" | "modelName">,
+  runtimeOptions: { approvalManager?: Pick<ApprovalManager, "requestApproval"> } = {},
+): Promise<AgentRuntime> {
   const resolved = resolveRunConfiguration(options, config);
   const provider = createProvider(resolved.providerName, resolved.modelEntry);
   const preset = getPreset(resolved.presetName);
@@ -136,6 +142,7 @@ export async function createRuntimeFromConfig(config: VelaireConfig, options: Pi
     cwd: process.cwd(),
     policyProfile: resolved.policyProfile,
     middleware: preset.createMiddleware?.() ?? [],
+    askUser: runtimeOptions.approvalManager?.requestApproval.bind(runtimeOptions.approvalManager),
     modelName: resolved.modelEntry?.model ?? resolved.providerName,
   });
 }
