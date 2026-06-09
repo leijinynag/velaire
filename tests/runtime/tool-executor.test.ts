@@ -33,7 +33,7 @@ describe("tool executor", () => {
     expect(events.at(-1)).toMatchObject({ type: "tool.completed", result: { ok: true, modelContent: "hello" } });
   });
 
-  test("emits approval request and waits for keyboard decision callback", async () => {
+  test("denies ask tools immediately when no approval callback is available", async () => {
     let called = false;
     const registry = new ToolRegistry();
     registry.register({
@@ -45,7 +45,7 @@ describe("tool executor", () => {
       },
     });
 
-    const promise = executeToolCall({
+    const events = await executeToolCall({
       runId: "run_1",
       step: 1,
       toolUse: { type: "tool_use", id: "toolu_1", name: "echo", input: { value: "hello" } },
@@ -53,9 +53,10 @@ describe("tool executor", () => {
       cwd: "/workspace",
       policyProfile: { allow: [], deny: [] },
     });
-    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(called).toBe(false);
+    expect(events.map((event) => event.type)).toEqual(["tool.requested", "policy.decision", "approval.requested", "approval.resolved", "tool.completed"]);
+    expect(events.at(-1)).toMatchObject({ type: "tool.completed", result: { ok: false, error: { code: "APPROVAL_REQUIRED" } } });
   });
 
   test("executes ask tools when approval callback allows once", async () => {

@@ -48,12 +48,9 @@ export async function executeToolCall(request: ToolCallExecutionRequest): Promis
   }
 
   if (decision.decision === "ask") {
-    let resolveApproval: ((decision: ApprovalDecision) => void) | undefined;
     const approvalPromise = askUser
       ? askUser({ toolUseId: toolUse.id, toolName: toolUse.name, input: toolUse.input })
-      : new Promise<ApprovalDecision>((resolve) => {
-          resolveApproval = resolve;
-        });
+      : Promise.resolve<ApprovalDecision>("deny");
     events.push({
       type: "approval.requested",
       runId,
@@ -62,7 +59,6 @@ export async function executeToolCall(request: ToolCallExecutionRequest): Promis
       toolName: toolUse.name,
       input: toolUse.input,
       prompt: `Allow ${toolUse.name}?`,
-      ...(resolveApproval ? { resolve: resolveApproval } : {}),
     });
     const approval = await approvalPromise;
     events.push({ type: "approval.resolved", runId, step, toolUseId: toolUse.id, approved: approval !== "deny" });
