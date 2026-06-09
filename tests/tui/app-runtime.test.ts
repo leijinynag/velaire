@@ -21,6 +21,7 @@ describe("TUI runtime submission", () => {
       "agent.step.started",
       "model.request.started",
       "model.delta",
+      "model.message.snapshot",
       "model.message.completed",
       "agent.run.completed",
     ]);
