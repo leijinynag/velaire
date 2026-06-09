@@ -76,11 +76,6 @@ export function parseOpenAICompatibleMessage(
   usage?: OpenAI.Completions.CompletionUsage | null,
 ): AssistantMessage {
   const content: AssistantMessage["content"] = [];
-  const reasoning = readReasoningContent(message);
-
-  if (reasoning) {
-    content.push({ type: "thinking", thinking: reasoning, safeToDisplay: true });
-  }
   if (typeof message.content === "string" && message.content) {
     content.push({ type: "text", text: message.content });
   }

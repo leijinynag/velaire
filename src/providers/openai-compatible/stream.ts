@@ -2,7 +2,7 @@ import type OpenAI from "openai";
 
 import type { ModelStreamEvent } from "@/providers/types";
 
-import { parseToolInput, readReasoningContent, toTokenUsage } from "./convert";
+import { parseToolInput, toTokenUsage } from "./convert";
 
 type OpenAICompatibleChunk = OpenAI.Chat.Completions.ChatCompletionChunk & {
   choices: Array<
@@ -56,12 +56,6 @@ function convertOpenAICompatibleStreamChunk(chunk: OpenAICompatibleChunk, state:
 
   const choice = chunk.choices[0];
   if (choice) {
-    const reasoning = readReasoningContent(choice.delta);
-    if (reasoning) {
-      // OpenAI 兼容实现没有 Anthropic 签名机制；只转发显式 reasoning_content，忽略其它隐藏推理字段。
-      events.push({ type: "text_delta", text: reasoning });
-    }
-
     if (typeof choice.delta.content === "string" && choice.delta.content) {
       events.push({ type: "text_delta", text: choice.delta.content });
     }

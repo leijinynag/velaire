@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { convertOpenAICompatibleStreamChunks } from "@/providers/openai-compatible/stream";
 
 describe("OpenAI-compatible stream conversion", () => {
-  test("converts synthetic text, safe reasoning, tool call deltas, final usage, and stop", () => {
+  test("does not expose reasoning as visible text while converting text, tool calls, usage, and stop", () => {
     const events = convertOpenAICompatibleStreamChunks([
       {
         id: "chatcmpl_1",
@@ -71,7 +71,6 @@ describe("OpenAI-compatible stream conversion", () => {
 
     expect(events).toEqual([
       { type: "message_start" },
-      { type: "text_delta", text: "visible " },
       { type: "text_delta", text: "hello" },
       { type: "tool_use", id: "call_1", name: "read_file", input: { filePath: "README.md" } },
       { type: "usage", usage: { inputTokens: 5, outputTokens: 13, totalTokens: 18 } },

@@ -126,7 +126,6 @@ describe("OpenAI-compatible message conversion", () => {
       role: "assistant",
       usage: { inputTokens: 7, outputTokens: 11, totalTokens: 18 },
       content: [
-        { type: "thinking", thinking: "visible", safeToDisplay: true },
         { type: "text", text: "done" },
         { type: "tool_use", id: "call_2", name: "read_file", input: { filePath: "a" } },
       ],
