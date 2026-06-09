@@ -11,7 +11,7 @@ import { InputBox } from "./components/input-box";
 import { MessageHistory } from "./components/message-history";
 import { StreamingIndicator } from "./components/streaming-indicator";
 import { useRuntimeEvents } from "./hooks/use-runtime-events";
-import { buildTodoViewState } from "./todo-view";
+import { buildTodoViewState, getNextTodo } from "./todo-view";
 
 export function App({ commands = BUILTIN_COMMANDS, runtime }: { commands?: SlashCommand[]; runtime?: AgentRuntime }) {
   const { state, viewModel, applyEvent } = useRuntimeEvents();
@@ -26,7 +26,7 @@ export function App({ commands = BUILTIN_COMMANDS, runtime }: { commands?: Slash
       {state.messages.length === 0 ? <Header /> : null}
       <MessageHistory messages={viewModel.messages} todoSnapshots={todoView.todoSnapshots} />
       {viewModel.errorText ? <Box paddingX={2}><Text color="red">Provider error: {viewModel.errorText}</Text></Box> : null}
-      <StreamingIndicator streaming={viewModel.streaming} />
+      <StreamingIndicator streaming={viewModel.streaming} nextTodo={getNextTodo(todoView.latestTodos)?.content} />
       <InputBox commands={commands} onSubmit={handleSubmit} onAbort={() => runtime?.abort()} />
       {todoView.latestTodos ? null : null}
       <Footer tokenUsage={viewModel.tokenUsage} />

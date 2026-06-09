@@ -108,6 +108,18 @@ describe("TUI runtime reducer", () => {
     expect(view.errorText).toBe("Something failed");
   });
 
+  test("tool_use_delta appends an assistant tool call so acting state is visible like Helixent", () => {
+    const state = reduceAll([
+      { type: "agent.run.started", runId, input: "read" },
+      { type: "model.delta", runId, step: 1, delta: { type: "tool_use_delta", toolUseId: "toolu_1", toolName: "read_file", inputJsonDelta: JSON.stringify({ description: "Read package", path: "/tmp/package.json" }) } },
+    ]);
+
+    expect(state.messages.at(-1)).toEqual({
+      role: "assistant",
+      content: [{ type: "tool_use", id: "toolu_1", name: "read_file", input: { description: "Read package", path: "/tmp/package.json" } }],
+    });
+  });
+
   test("model.message.completed replaces streaming text with the completed assistant message", () => {
     const state = reduceAll([
       { type: "agent.run.started", runId, input: "complete" },
