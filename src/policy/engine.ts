@@ -11,6 +11,9 @@ export function evaluatePolicy(request: PolicyRequest, profile: PolicyProfile = 
   if (profile.deny.includes(request.toolName)) {
     return { decision: "deny", reason: `Tool ${request.toolName} is explicitly denied` };
   }
+  if (request.planMode && request.capabilities.some((capability) => ["workspace.write", "shell.execute", "network.write", "external.side_effect", "destructive"].includes(capability))) {
+    return { decision: "deny", reason: "Plan Mode blocks workspace-changing tools until approval" };
+  }
   if (profile.allow.includes(request.toolName)) {
     return { decision: "allow", reason: `Tool ${request.toolName} is explicitly allowed` };
   }

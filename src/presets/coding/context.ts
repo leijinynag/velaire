@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 export interface CodingPromptContext {
   cwd: string;
+  planMode?: boolean;
 }
 
 export async function loadAgentsGuidance(cwd: string): Promise<string | null> {

@@ -14,6 +14,7 @@ export interface PolicyRequest {
   risk: ToolRiskProfile;
   cwd: string;
   source: "model" | "user";
+  planMode?: boolean;
 }
 
 export interface PolicyDecision {

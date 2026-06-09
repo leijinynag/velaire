@@ -2,6 +2,7 @@ import type { ToolRegistry } from "@/tools/registry";
 
 export interface PresetSystemPromptContext {
   cwd: string;
+  planMode?: boolean;
 }
 
 export interface AgentPreset {
