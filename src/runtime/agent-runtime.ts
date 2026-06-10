@@ -8,6 +8,7 @@ import type { AgentContext, BeforeToolUseResult } from "./middleware";
 import { createRunId } from "./session";
 import { executeToolCall } from "./tool-executor";
 import { formatToolResultForMessage } from "./tool-result-runtime";
+import { RuntimeTranscript } from "./transcript";
 import type { AgentRunOptions, AgentRuntimeOptions } from "./types";
 
 /**
@@ -37,7 +38,8 @@ export class AgentRuntime {
   /** 用于主动中断运行的 AbortController 实例 */
   private abortController: AbortController | null = null;
   /** 历史消息记录（不含 system 消息） */
-  readonly messages: NonSystemMessage[] = [];
+  private readonly transcript = new RuntimeTranscript();
+  readonly messages: NonSystemMessage[] = this.transcript.messages;
   /** Agent 上下文，供中间件读写 */
   private readonly agentContext: AgentContext;
 
@@ -63,7 +65,7 @@ export class AgentRuntime {
     const runId = createRunId();
     this.abortController = new AbortController();
     const userMessage: UserMessage = { role: "user", content: [{ type: "text", text: input }] };
-    this.messages.push(userMessage);
+    this.transcript.append(userMessage);
     yield { type: "agent.run.started", runId, input };
 
     try {
@@ -84,7 +86,7 @@ export class AgentRuntime {
         }
         const assistantMessage = collected.message;
         if (!assistantMessage) throw new Error("Model stream completed without an assistant message");
-        this.messages.push(assistantMessage);
+        this.transcript.append(assistantMessage);
         // 调用 afterModel 中间件，允许对 assistant 消息做后处理
         for (const middleware of this.middleware) {
           const result = await middleware.afterModel?.({ transcript: { messages: this.messages }, message: assistantMessage, agentContext: this.agentContext });
@@ -197,7 +199,7 @@ export class AgentRuntime {
           role: "tool",
           content: [{ type: "tool_result", toolUseId: completed.toolUse.id, content: formatToolResultForMessage({ toolName: completed.toolUse.name, result: completedEvent.result }), isError: !completedEvent.result.ok }],
         };
-        this.messages.push(toolMessage);
+        this.transcript.append(toolMessage);
       }
     }
   }

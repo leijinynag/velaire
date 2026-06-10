@@ -12,6 +12,7 @@ import { ApprovalManager } from "@/policy/approval-manager";
 import { loadProjectAllowList, persistAllowedTool } from "@/policy/persistence";
 import type { PolicyProfile } from "@/policy/types";
 import { codingPreset } from "@/presets/coding";
+import { loadAgentsGuidanceMessage } from "@/presets/coding/context";
 import { researchLitePreset } from "@/presets/research-lite";
 import type { AsyncAgentPreset } from "@/presets/types";
 import { MockModelProvider } from "@/providers/mock/provider";
@@ -138,17 +139,23 @@ export async function createRuntimeFromConfig(
   const resolved = resolveRunConfiguration(options, config);
   const provider = createProvider(resolved.providerName, resolved.modelEntry);
   const preset = getPreset(resolved.presetName);
-  return new AgentRuntime({
+  const cwd = process.cwd();
+  const runtime = new AgentRuntime({
     provider,
-    systemPrompt: await preset.createSystemPrompt({ cwd: process.cwd() }),
+    systemPrompt: await preset.createSystemPrompt({ cwd }),
     tools: preset.createTools(),
-    cwd: process.cwd(),
+    cwd,
     policyProfile: resolved.policyProfile,
     middleware: preset.createMiddleware?.() ?? [],
     askUser: runtimeOptions.approvalManager?.requestApproval.bind(runtimeOptions.approvalManager),
     approvalPersistence: { loadAllowList: loadProjectAllowList, persistAllowedTool },
     modelName: resolved.modelEntry?.model ?? resolved.providerName,
   });
+  if (resolved.presetName === codingPreset.name) {
+    const agentsMessage = await loadAgentsGuidanceMessage(cwd);
+    if (agentsMessage) runtime.messages.unshift(agentsMessage);
+  }
+  return runtime;
 }
 
 function resolveModelEntry(modelName: string | undefined, config: VelaireConfig): ModelEntry {
