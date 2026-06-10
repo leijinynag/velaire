@@ -32,6 +32,7 @@ export class AnthropicModelProvider implements ModelProvider<AnthropicProviderOp
     this.client = options.client ?? new Anthropic({ apiKey: options.apiKey, ...(options.baseURL ? { baseURL: options.baseURL } : {}) });
   }
 
+  // SDK 原始响应只在 provider 层处理，runtime 只接收规范化消息和事件。
   async invoke(params: ProviderInvokeParams<AnthropicProviderOptions>): Promise<AssistantMessage> {
     const message = await this.client.messages.create(buildAnthropicRequest(params), { signal: params.signal });
     return parseAnthropicMessage(message);

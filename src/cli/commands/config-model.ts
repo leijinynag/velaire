@@ -129,6 +129,7 @@ export function buildModelEntry(options: ModelOptions): ModelEntry {
   return { name, provider, model, apiKey, baseURL, options: {} };
 }
 
+// 首次 add 时允许从空配置构造可写 config，保存后 defaultModel 再指向首个模型。
 function readWritableConfig(): VelaireConfig {
   if (!isVelaireSetupComplete()) {
     return {

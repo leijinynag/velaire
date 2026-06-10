@@ -10,6 +10,7 @@ const DEFAULT_POLICY: ToolResultPolicy = {
   maxStringLength: 4000,
 };
 
+// 按工具输出体积和风险决定写回模型的字段与长度。
 export function getToolResultPolicy(toolName: string): ToolResultPolicy {
   switch (toolName) {
     case "list_files":

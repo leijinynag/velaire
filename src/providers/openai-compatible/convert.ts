@@ -102,6 +102,7 @@ export function readReasoningContent(value: { reasoning_content?: string | null 
   return typeof value.reasoning_content === "string" && value.reasoning_content ? value.reasoning_content : undefined;
 }
 
+// Provider 只接受纯 JSON Schema，需剥离 Zod 运行时元数据。
 function normalizeJsonSchema(schema: Record<string, unknown>): Record<string, unknown> {
   const { $schema, "~standard": _standard, ...rest } = schema;
   return rest;
@@ -128,6 +129,7 @@ function convertUserContent(content: Extract<NonSystemMessage, { role: "user" }>
 
 function convertAssistantMessage(message: Extract<NonSystemMessage, { role: "assistant" }>): OpenAICompatibleAssistantMessageParam {
   const text = message.content.filter((part) => part.type === "text").map((part) => part.text).join("");
+  // 只续传明确标记可展示的 reasoning，避免把隐藏推理写回 provider。
   const safeReasoning = message.content
     .flatMap((part) => (part.type === "thinking" && part.safeToDisplay ? [part.thinking] : []))
     .join("");

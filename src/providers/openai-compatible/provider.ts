@@ -31,6 +31,7 @@ export class OpenAICompatibleModelProvider implements ModelProvider<OpenAICompat
   private readonly client: OpenAI;
   private readonly defaults: OpenAICompatibleProviderOptions;
 
+  // provider 默认参数在这里合并，runtime 不感知 OpenAI-compatible 具体选项。
   constructor(options: OpenAICompatibleModelProviderOptions = {}) {
     this.client = options.client ?? new OpenAI({ apiKey: options.apiKey, ...(options.baseURL ? { baseURL: options.baseURL } : {}) });
     this.defaults = { ...(options.model ? { model: options.model } : {}), ...options.options };

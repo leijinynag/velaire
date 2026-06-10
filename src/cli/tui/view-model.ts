@@ -12,6 +12,7 @@ export interface TuiViewModel {
   modelName?: string;
 }
 
+// streaming 文本只在 view model 中临时拼成 assistant 消息，不写回 reducer 历史。
 export function deriveTuiViewModel(state: TuiRuntimeState): TuiViewModel {
   const messages = state.streamingText ? [...state.messages, streamingAssistantMessage(state.streamingText)] : state.messages;
   return {

@@ -19,6 +19,7 @@ export function getDefaultSkillDirs(options: SkillDiscoveryOptions = {}): string
   const workspace = path.resolve(expandHome(options.workspace ?? options.cwd ?? process.cwd()));
   const cwd = path.resolve(expandHome(options.cwd ?? workspace));
 
+  // 搜索顺序兼容 workspace、Velaire home、通用 agent 目录和当前目录 skills。
   return [
     path.join(workspace, ".agents", "skills"),
     path.join(workspace, ".velaire", "skills"),

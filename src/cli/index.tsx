@@ -79,6 +79,7 @@ export async function main(argv = process.argv): Promise<void> {
   await createProgram().parseAsync(argv);
 }
 
+// mock 允许无配置运行；真实 provider 必须解析到已保存的 model entry。
 export function resolveRunConfiguration(options: Pick<RunCommandOptions, "provider" | "preset" | "modelName">, config: VelaireConfig): ResolvedRunConfiguration {
   const modelEntry = options.provider === "mock" ? undefined : resolveModelEntry(options.modelName, config);
   const providerName = options.provider ?? modelEntry?.provider ?? "mock";
@@ -131,6 +132,7 @@ async function runOnce(options: RunCommandOptions): Promise<void> {
   process.stdout.write("\n");
 }
 
+// CLI 只负责装配 provider、preset、policy 和审批桥接，不承载 agent loop 逻辑。
 export async function createRuntimeFromConfig(
   config: VelaireConfig,
   options: Pick<RunCommandOptions, "provider" | "preset" | "modelName">,

@@ -24,6 +24,7 @@ export async function createCodingRuntime({ provider, modelName, cwd, policyProf
     policyProfile,
     modelName,
   });
+  // AGENTS.md 作为上下文消息注入，避免和通用 system prompt 混在一起。
   const agentsMessage = await loadAgentsGuidanceMessage(cwd);
   if (agentsMessage) runtime.messages.unshift(agentsMessage);
   return runtime;

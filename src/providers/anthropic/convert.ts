@@ -124,6 +124,7 @@ export function toTokenUsage(usage: AnthropicUsageLike): TokenUsage {
   return { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens };
 }
 
+// 签名缓存只用于 Anthropic 多轮 thinking 续传，不进入 runtime 可见内容。
 const thinkingSignatures = new Map<string, string>();
 
 function preserveThinkingSignature(thinking: string, signature?: string): void {
@@ -144,6 +145,7 @@ function asRecord(value: unknown): ToolUseContentBlock["input"] {
   return {};
 }
 
+// Anthropic tool schema 不接受 Zod 附加元数据，这里递归剥离。
 function stripZodJsonSchemaMetadata(schema: unknown): unknown {
   if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
     return schema;

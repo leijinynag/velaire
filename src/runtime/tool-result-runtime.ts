@@ -18,6 +18,7 @@ type TranscriptToolResult =
       };
     };
 
+// 写回模型上下文的工具结果必须压缩且结构稳定，避免大输出污染后续轮次。
 export function formatToolResultForMessage({ toolName, result }: { toolName: string; result: ToolExecutionResult }): string {
   const policy = getToolResultPolicy(toolName);
 

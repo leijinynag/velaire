@@ -23,6 +23,7 @@ export function createCodingTools(options: { askUserQuestion?: (params: AskUserQ
   return createCodingToolSystem(options).tools;
 }
 
+// coding 工具系统在这里组合，确保 todo 工具和 middleware 来自同一个会话实例。
 export function createCodingToolSystem(options: { askUserQuestion?: (params: AskUserQuestionParameters) => Promise<AskUserQuestionResult> } = {}) {
   const todoSystem = createTodoSystem();
   return {

@@ -18,6 +18,7 @@ interface ToolCallState {
   partialJson: string;
 }
 
+// OpenAI-compatible 工具调用参数会分片到达，需按 index 累积到 finish_reason 后再转成 tool_use。
 interface StreamState {
   started: boolean;
   sawStopFinish: boolean;

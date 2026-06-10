@@ -8,6 +8,7 @@ export interface CodingPromptContext {
   planMode?: boolean;
 }
 
+// 项目级 AGENTS.md 是可选上下文，缺失时不影响 runtime 启动。
 export async function loadAgentsGuidance(cwd: string): Promise<string | null> {
   try {
     const content = await readFile(join(cwd, "AGENTS.md"), "utf8");

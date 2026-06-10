@@ -14,6 +14,7 @@ export const settingsSchema = z
 
 export type Settings = z.infer<typeof settingsSchema>;
 
+// 更新 allow list 时保留未知字段，避免破坏用户手写 settings。
 export function appendToolToAllowList(document: Record<string, unknown>, toolName: string): Record<string, unknown> {
   const permissions = document.permissions && typeof document.permissions === "object" && !Array.isArray(document.permissions)
     ? { ...(document.permissions as Record<string, unknown>) }

@@ -17,6 +17,7 @@ export const codingPreset: AsyncAgentPreset = {
   },
 };
 
+// preset 是领域组合层，coding 行为通过工具和 middleware 组装进通用 runtime。
 function createCodingToolRegistry() {
   const registry = new ToolRegistry();
   const toolSystem = createCodingToolSystem();

@@ -27,6 +27,7 @@ export async function ensureDirectoryPath(path: string): Promise<{ ok: true } | 
   }
 }
 
+// 先 resolve 再比较相对路径，防止通过 .. 或相对路径绕过 workspace 边界。
 export function isWithinDirectory(root: string, target: string): boolean {
   const relativePath = relative(resolve(root), resolve(target));
   return relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath));

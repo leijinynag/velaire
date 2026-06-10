@@ -38,6 +38,7 @@ export const bashTool: ToolDefinition<z.infer<typeof schema>, { exitCode: number
     let aborted = false;
 
     try {
+      // shell 执行统一在这里绑定 cwd、超时、中断和输出截断。
       const proc = Bun.spawn({ cmd: ["zsh", "-c", command], cwd: workingDirectory, stdout: "pipe", stderr: "pipe" });
       const kill = () => {
         aborted = true;

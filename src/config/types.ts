@@ -32,6 +32,7 @@ export const velaireConfigSchema = z
     models: z.array(modelEntrySchema).default([]),
     settings: settingsSchema.default({ permissions: { allow: [], deny: [] } }),
   })
+  // 允许首次启动空配置；一旦有 models，defaultModel 必须指向有效配置。
   .superRefine((value, ctx) => {
     if (value.models.length > 0 && !value.models.some((model) => model.name === value.defaultModel)) {
       ctx.addIssue({

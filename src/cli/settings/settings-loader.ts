@@ -27,6 +27,7 @@ async function loadLayer(filePath: string): Promise<Settings> {
   return parsed.data;
 }
 
+// 普通字段按层覆盖，permissions allow/deny 采用去重合并。
 function mergeSettingsLayers(layers: Settings[]): Settings {
   const mergedTop: Record<string, unknown> = {};
   for (const layer of layers) {
@@ -71,6 +72,7 @@ export class SettingsLoader {
     return join(cwd, ".velaire", "settings.local.json");
   }
 
+  // settings 按 user -> project -> project local 加载，本地层用于机器私有授权。
   async load(cwd: string): Promise<Settings> {
     return mergeSettingsLayers(await Promise.all([this.userSettingsPath(), this.projectSettingsPath(cwd), this.projectLocalSettingsPath(cwd)].map((filePath) => loadLayer(filePath))));
   }

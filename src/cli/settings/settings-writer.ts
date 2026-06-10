@@ -4,6 +4,7 @@ import { SettingsLoader } from "./settings-loader";
 export class SettingsWriter {
   constructor(private readonly loader: SettingsLoader = new SettingsLoader()) {}
 
+  // always allow 写入 settings.local.json，避免把本机授权提交到项目配置。
   async appendAllowedTool(cwd: string, toolName: string): Promise<void> {
     const filePath = this.loader.projectLocalSettingsPath(cwd);
     const file = Bun.file(filePath);

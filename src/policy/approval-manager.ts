@@ -14,6 +14,7 @@ export class ApprovalManager {
     return this.request;
   }
 
+  // runtime 以 Promise 等待审批，TUI 通过队列逐个展示并 resolve。
   requestApproval(input: ApprovalRequestInput): Promise<ApprovalDecision> {
     return new Promise((resolve) => {
       if (this.queue.length >= this.maxQueueSize) {

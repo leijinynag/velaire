@@ -18,6 +18,7 @@ export type BeforeToolUseResult =
   | undefined
   | void;
 
+// 中间件是 runtime 的扩展边界，preset/skills 通过它改写上下文而不侵入主循环。
 export interface AgentMiddleware {
   beforeAgentRun?: (params: { agentContext: AgentContext }) => Promise<Partial<AgentContext> | null | undefined | void> | Partial<AgentContext> | null | undefined | void;
   afterAgentRun?: (params: { agentContext: AgentContext }) => Promise<Partial<AgentContext> | null | undefined | void> | Partial<AgentContext> | null | undefined | void;

@@ -9,6 +9,7 @@ const REMINDER_CONFIG = {
   STEPS_BETWEEN_REMINDERS: 10,
 } as const;
 
+// reminder 按模型调用轮次触发，避免用 UI 定时器影响 runtime 行为。
 export function createTodoReminderMiddleware(state: TodoReminderState): AgentMiddleware {
   let stepsSinceLastWrite = Infinity;
   let stepsSinceLastReminder = Infinity;

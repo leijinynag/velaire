@@ -20,6 +20,7 @@ function normalizePatchPath(rawPath: string): string {
   return rawPath.replace(/^a\//, "").replace(/^b\//, "");
 }
 
+// 只解析受控的 unified diff 子集，避免支持删除/重命名等高风险 patch 行为。
 function parsePatch(patch: string): PatchFile[] {
   const lines = patch.replace(/\r\n/g, "\n").split("\n");
   const files: PatchFile[] = [];
@@ -71,6 +72,7 @@ function parsePatch(patch: string): PatchFile[] {
   return files;
 }
 
+// hunk 行数必须匹配 header，避免模型生成的 patch 静默错位。
 function validateCounts(hunk: PatchHunk, path: string): void {
   let oldSeen = 0;
   let newSeen = 0;

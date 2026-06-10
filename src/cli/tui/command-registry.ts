@@ -106,6 +106,7 @@ export function formatHelp(commands: SlashCommand[] = BUILTIN_COMMANDS, target?:
   return lines.join("\n");
 }
 
+// skill slash command 不改写用户正文，只给 runtime 标记显式技能名。
 export function buildPromptSubmission(text: string, commands: SlashCommand[]): PromptSubmission {
   const match = text.match(/^\/([^\s]+)(?:\s|$)/);
   if (!match) return { text, requestedSkillName: null };

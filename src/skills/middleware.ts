@@ -8,6 +8,7 @@ function escapeAttribute(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
+// system prompt 只暴露 skill 索引，具体内容按 progressive loading 再读取。
 export function renderSkillsPromptBlock(skills: SkillFrontmatter[], requestedSkillName?: string): string {
   if (skills.length === 0 && !requestedSkillName) return "";
 
@@ -48,6 +49,7 @@ ${skillsXml}
 export function createSkillsMiddleware(options: SkillsMiddlewareOptions = {}): AgentMiddleware {
   return {
     beforeAgentRun: async ({ agentContext }) => {
+      // 每次 run 重新发现技能，避免长驻 TUI 使用过期 skill 索引。
       const files = await discoverSkillFiles(options);
       agentContext.skills = await Promise.all(files.map((file) => loadSkillFrontmatter(file)));
     },

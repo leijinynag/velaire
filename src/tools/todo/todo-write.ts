@@ -31,6 +31,7 @@ export function createTodoWriteTool(): ToolDefinition<z.infer<typeof schema>, { 
   return createTodoSystem().tool;
 }
 
+// todo store 是单次工具系统的会话状态，tool 和 reminder middleware 必须共享同一份。
 export function createTodoSystem() {
   const store: Todo[] = [];
 

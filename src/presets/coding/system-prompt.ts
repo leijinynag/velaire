@@ -5,6 +5,7 @@ function normalizeCwd(cwd: string): string {
 }
 
 export async function createCodingSystemPrompt({ cwd, planMode = false }: CodingPromptContext): Promise<string> {
+  // plan mode 同时由 prompt 和 policy 约束；这里负责告诉模型只做只读规划。
   const planModePrompt = planMode
     ? `
 

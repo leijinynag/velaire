@@ -5,6 +5,7 @@ import type { ModelProvider } from "./types";
 type ProviderFactoryOptions = AnthropicModelProviderOptions | OpenAICompatibleModelProviderOptions;
 type ProviderFactory = (options?: ProviderFactoryOptions) => ModelProvider;
 
+// Registry 同时管理运行期 provider 实例和配置驱动的 provider factory。
 export class ProviderRegistry {
   private readonly providers = new Map<string, ModelProvider>();
   private readonly factories = new Map<string, ProviderFactory>([

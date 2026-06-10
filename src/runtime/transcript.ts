@@ -1,5 +1,6 @@
 import type { NonSystemMessage } from "@/foundation/messages/types";
 
+// Transcript 只保存可续传的非 system 消息，systemPrompt 由 runtime 单独注入。
 export class RuntimeTranscript {
   constructor(readonly messages: NonSystemMessage[] = []) {}
 

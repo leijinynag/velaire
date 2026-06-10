@@ -5,6 +5,7 @@ export interface ToolUseDisplay {
   detail?: string;
 }
 
+// 工具展示文案集中在这里，避免 UI 组件散落理解各工具 input schema。
 export function formatToolUseDisplay(content: ToolUseContent): ToolUseDisplay {
   const input = content.input;
   const explicit = typeof input.description === "string" && input.description.trim() ? input.description : undefined;

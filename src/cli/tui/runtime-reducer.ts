@@ -80,6 +80,7 @@ export function reduceRuntimeEvent(state: TuiRuntimeState, event: RuntimeEvent):
       return reduceModelDelta(state, event);
 
     case "model.message.snapshot":
+      // snapshot 只代表流式中间态，当前历史以 delta 展示和 completed 落盘为准。
       return state;
 
     case "model.message.completed":

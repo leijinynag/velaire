@@ -92,6 +92,7 @@ export async function handleSubmittedText(submission: PromptSubmission | string,
     return;
   }
 
+  // coding-plan skill 触发 planMode，让 prompt 和 policy 同时进入只读规划状态。
   await submitPromptToRuntime(text, runtime, applyEvent, { requestedSkillName, planMode: requestedSkillName === "coding-plan" });
 }
 

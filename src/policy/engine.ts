@@ -7,6 +7,7 @@ const defaultProfile: PolicyProfile = {
   deny: [],
 };
 
+// 规则顺序体现安全优先级：deny、plan mode 和 workspace 边界不能被 allow 覆盖。
 export function evaluatePolicy(request: PolicyRequest, profile: PolicyProfile = defaultProfile): PolicyDecision {
   if (profile.deny.includes(request.toolName)) {
     return { decision: "deny", reason: `Tool ${request.toolName} is explicitly denied` };

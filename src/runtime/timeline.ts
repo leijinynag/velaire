@@ -5,6 +5,7 @@ export type TimelineItemInput = Omit<TimelineItem, "id" | "timestamp"> & {
   timestamp?: string;
 };
 
+// Timeline 面向 UI 和日志回放，不参与模型上下文构造。
 export class RuntimeTimeline {
   readonly items: TimelineItem[] = [];
 
