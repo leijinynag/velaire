@@ -1,11 +1,27 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, test } from "bun:test";
 
 import { loadSkills } from "@/skills/loader";
 
-describe("built-in Lark skill", () => {
-  test("discovers the bundled Lark/Feishu skill", async () => {
-    const skills = await loadSkills({ cwd: process.cwd(), workspace: process.cwd() });
+describe("global Lark skills", () => {
+  test("discovers Lark/Feishu skills from the shared agents skill directory", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "velaire-lark-skills-"));
+    const agentsHome = join(workspace, ".agents", "skills", "lark-im");
+    try {
+      await mkdir(agentsHome, { recursive: true });
+      await writeFile(
+        join(agentsHome, "SKILL.md"),
+        "---\nname: lark-im\ndescription: 飞书消息助手\n---\n\n# Lark IM\n",
+      );
 
-    expect(skills.some((skill) => skill.name === "lark" && skill.description.includes("飞书"))).toBe(true);
+      const skills = await loadSkills({ cwd: workspace, workspace });
+
+      expect(skills.some((skill) => skill.name === "lark-im" && skill.description.includes("飞书"))).toBe(true);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
   });
 });
