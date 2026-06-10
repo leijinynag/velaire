@@ -8,6 +8,7 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_MAX_CHARS = 12_000;
 
 const schema = z.object({
+  description: z.string().optional().describe("Explain why you want to execute the command. Place description before command when possible."),
   command: z.string(),
   cwd: z.string().optional(),
   timeout: z.number().int().positive().optional(),
@@ -21,7 +22,7 @@ async function readPipe(stream: ReadableStream<Uint8Array> | null): Promise<stri
 
 export const bashTool: ToolDefinition<z.infer<typeof schema>, { exitCode: number | null; stdout: string; stderr: string; truncated: boolean }> = {
   name: "bash",
-  description: "Execute a shell command with cwd, timeout, AbortSignal, separated stdout/stderr, and truncated output.",
+  description: "Execute a shell command in zsh with cwd, timeout, AbortSignal, separated stdout/stderr, and truncated output. Include a short description explaining why the command is needed.",
   schema,
   capabilities: ["shell.execute"],
   risk: { level: "high", reversible: false, description: "Runs arbitrary shell commands that may modify the system." },

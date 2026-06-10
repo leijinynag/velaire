@@ -51,6 +51,8 @@ describe("coding tool registry", () => {
     expect(getTool("write_file")).toMatchObject({ capabilities: ["workspace.write"], risk: { level: "medium" } });
     expect(getTool("apply_patch").capabilities).toContain("destructive");
     expect(getTool("bash")).toMatchObject({ capabilities: ["shell.execute"], risk: { level: "high" } });
+    const bashInput = getTool("bash").schema.safeParse({ description: "List files", command: "ls" });
+    expect(bashInput.success ? bashInput.data.description : undefined).toBe("List files");
     expect(getTool("ask_user_question")).toMatchObject({ capabilities: ["user.interaction"], risk: { level: "low" } });
   });
 });
