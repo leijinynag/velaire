@@ -6,6 +6,7 @@ import { toolFailure, toolSuccess } from "@/tools/results";
 import type { ToolDefinition } from "@/tools/types";
 
 import { ensureAbsolutePath, errorMessage } from "./utils";
+import { createTextDiff, type FileChange } from "./file-change";
 
 const schema = z.object({
   path: z.string(),
@@ -61,10 +62,11 @@ export const strReplaceTool: ToolDefinition<z.infer<typeof schema>> = {
       });
       const replacements = Number.isFinite(max) ? Math.min(occurrences, max) : occurrences;
       await writeFile(path, updated);
+      const fileChanges: FileChange[] = updated === text ? [] : [{ path, kind: "modified", before: text, after: updated, diff: createTextDiff(text, updated) }];
       return toolSuccess({
         summary: `Replaced ${replacements} occurrence(s) in ${path}`,
         modelContent: `Replaced ${replacements} occurrence(s) in ${path}.`,
-        data: { path, replacements, changed: updated !== text },
+        data: { path, replacements, changed: updated !== text, fileChanges },
       });
     } catch (error) {
       const message = errorMessage(error);

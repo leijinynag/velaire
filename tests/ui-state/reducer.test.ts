@@ -46,4 +46,12 @@ describe("shared agent UI reducer", () => {
     expect(state.agents.planner).toMatchObject({ id: "planner", name: "Planner", status: "running", step: 1, eventCount: 1 });
     expect(state.agents.coder).toMatchObject({ id: "coder", name: "Coder", status: "idle", step: 1, eventCount: 2 });
   });
+
+  test("collects structured file changes from tool results", () => {
+    const state = reduceAll([
+      { type: "tool.completed", runId, step: 1, toolUseId: "toolu_1", toolName: "write_file", result: { ok: true, summary: "wrote", modelContent: "done", data: { fileChanges: [{ path: "/workspace/a.ts", kind: "created", after: "export {};" }] } } },
+    ]);
+
+    expect(state.fileChanges).toEqual([{ path: "/workspace/a.ts", kind: "created", after: "export {};", toolUseId: "toolu_1" }]);
+  });
 });

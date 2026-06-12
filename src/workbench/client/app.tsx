@@ -33,17 +33,19 @@ export function WorkbenchApp() {
         <section className="agent-canvas">
           <AgentLanes agents={state.agents} />
           <ConversationWorkspace messages={conversation.messages} tools={state.tools} onSelectTool={setSelectedToolUseId} />
+          <CommandPaletteHint />
           <Composer onSubmit={runPrompt} disabled={state.isRunning} />
         </section>
 
         <aside className="inspector-panel">
           <nav className="inspector-tabs">
-            {['timeline', 'tool', 'policy', 'transcript', 'metrics'].map((tab) => (
+            {['timeline', 'tool', 'diff', 'policy', 'transcript', 'metrics'].map((tab) => (
               <button className={selectedInspector === tab ? 'active' : ''} key={tab} onClick={() => setSelectedInspector(tab)}>{tab}</button>
             ))}
           </nav>
           {selectedInspector === "timeline" ? <TimelinePanel state={state} onSelectTool={setSelectedToolUseId} /> : null}
           {selectedInspector === "tool" ? <ToolInspector tool={selectedTool} /> : null}
+          {selectedInspector === "diff" ? <DiffViewer changes={state.fileChanges} /> : null}
           {selectedInspector === "policy" ? <PolicyInspector /> : null}
           {selectedInspector === "transcript" ? <TranscriptViewer messages={state.messages} /> : null}
           {selectedInspector === "metrics" ? <MetricsPanel metrics={metrics} /> : null}
@@ -99,4 +101,17 @@ function TranscriptViewer({ messages }: { messages: NonSystemMessage[] }) {
 
 function MetricsPanel({ metrics }: { metrics: ReturnType<typeof deriveMetricsView> }) {
   return <div className="panel-body"><h2>Metrics</h2><pre>{JSON.stringify(metrics, null, 2)}</pre></div>;
+}
+
+function DiffViewer({ changes }: { changes: ReturnType<typeof import("@/ui-state").createInitialAgentUiState>["fileChanges"] }) {
+  return <div className="panel-body"><h2>Code Diff</h2>{changes.length === 0 ? <p>No file changes yet.</p> : changes.map((change) => <article className="diff-card" key={`${change.toolUseId}:${change.path}`}><header><strong>{change.kind}</strong><span>{change.path}</span></header>{change.previousPath ? <small>from {change.previousPath}</small> : null}<pre>{change.diff ?? renderFallbackDiff(change.before, change.after)}</pre></article>)}</div>;
+}
+
+function renderFallbackDiff(before?: string, after?: string): string {
+  if (before === undefined && after === undefined) return "No textual diff available.";
+  return [`Before:\n${before ?? ""}`, `After:\n${after ?? ""}`].join("\n\n");
+}
+
+function CommandPaletteHint() {
+  return <div className="command-palette-hint"><kbd>⌘K</kbd><span>Command palette hooks are reserved for run, layout, inspector, and skill actions.</span></div>;
 }

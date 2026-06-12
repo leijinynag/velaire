@@ -21,7 +21,7 @@ button, textarea { font: inherit; }
 .activity-rail button { height: 44px; border: 1px solid transparent; background: transparent; color: #9ba39a; cursor: pointer; }
 .activity-rail button:hover { border-color: #3d493e; color: #f1f4ee; background: #1b211c; }
 
-.agent-canvas { display: grid; grid-template-rows: 58px 1fr 124px; min-width: 0; background: linear-gradient(180deg, #151915 0%, #111411 100%); }
+.agent-canvas { display: grid; grid-template-rows: 58px 1fr 34px 124px; min-width: 0; background: linear-gradient(180deg, #151915 0%, #111411 100%); }
 .agent-lanes { display: flex; gap: 10px; align-items: center; padding: 10px 16px; border-bottom: 1px solid #293029; overflow-x: auto; }
 .agent-lane { min-width: 148px; display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border: 1px solid #364135; background: #1a201b; }
 .agent-lane small { color: #d0a85f; text-transform: uppercase; font-size: 10px; }
@@ -45,6 +45,8 @@ pre, code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .composer textarea:focus { border-color: #8fc39a; }
 .composer button { border: 1px solid #83a46e; background: #9cc985; color: #101310; cursor: pointer; font-weight: 700; }
 .composer button:disabled { opacity: .55; cursor: wait; }
+.command-palette-hint { display: flex; align-items: center; gap: 10px; padding: 0 16px; color: #8f988d; font-size: 12px; border-top: 1px solid #232a23; background: #131713; }
+.command-palette-hint kbd { border: 1px solid #3b453a; padding: 2px 6px; color: #d7b56d; background: #101310; }
 
 .inspector-panel { min-width: 0; border-left: 1px solid #293029; background: #121512; display: grid; grid-template-rows: 42px 1fr; }
 .inspector-tabs { display: flex; border-bottom: 1px solid #293029; overflow-x: auto; }
@@ -53,3 +55,8 @@ pre, code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .panel-body { min-height: 0; overflow: auto; padding: 16px; }
 .panel-body h2 { margin: 0 0 14px; font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: #dfe6dc; }
 .timeline-item { width: 100%; display: block; margin-bottom: 8px; padding: 10px; border: 1px solid #303830; background: #171c18; color: #dfe6dc; text-align: left; }
+.diff-card { margin-bottom: 12px; border: 1px solid #303830; background: #171c18; }
+.diff-card header { display: flex; gap: 10px; justify-content: space-between; padding: 10px; border-bottom: 1px solid #303830; color: #e7ece4; }
+.diff-card header strong { color: #d0a85f; text-transform: uppercase; font-size: 11px; }
+.diff-card small { display: block; padding: 8px 10px 0; color: #98a195; }
+.diff-card pre { margin: 10px; max-height: 420px; }

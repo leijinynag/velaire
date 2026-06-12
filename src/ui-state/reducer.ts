@@ -18,6 +18,7 @@ export function createInitialAgentUiState(): AgentUiState {
     tokenUsage: { latestInputTokens: 0, latestOutputTokens: 0, sessionTotalTokens: 0 },
     error: null,
     agents: {},
+    fileChanges: [],
   };
 }
 
@@ -123,6 +124,7 @@ export function reduceRuntimeEvent(state: AgentUiState, event: RuntimeEvent): Ag
           },
         },
         messages: [...baseState.messages, toolMessage],
+        fileChanges: [...baseState.fileChanges, ...(event.result.ok ? extractFileChanges(event.result.data, event.toolUseId) : [])],
       };
     }
 
@@ -135,6 +137,15 @@ export function reduceRuntimeEvent(state: AgentUiState, event: RuntimeEvent): Ag
     case "agent.error":
       return { ...baseState, runId: event.runId, isRunning: false, streamingText: "", error: event.error };
   }
+}
+
+function extractFileChanges(data: unknown, toolUseId: string) {
+  if (!data || typeof data !== "object" || !("fileChanges" in data)) return [];
+  const changes = (data as { fileChanges?: unknown }).fileChanges;
+  if (!Array.isArray(changes)) return [];
+  return changes
+    .filter((change): change is Record<string, unknown> => !!change && typeof change === "object" && typeof change.path === "string")
+    .map((change) => ({ ...change, toolUseId: typeof change.toolUseId === "string" ? change.toolUseId : toolUseId })) as never[];
 }
 
 function reduceModelDelta(state: AgentUiState, event: Extract<RuntimeEvent, { type: "model.delta" }>): AgentUiState {

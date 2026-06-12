@@ -2,6 +2,7 @@ import type { AgentError } from "@/foundation/errors/types";
 import type { TimelineItem } from "@/foundation/events/types";
 import type { NonSystemMessage } from "@/foundation/messages/types";
 import type { ApprovalDecision } from "@/policy/types";
+import type { FileChange } from "@/tools/workspace/file-change";
 
 export type AgentToolRunStatus = "started" | "completed" | "failed";
 export type AgentLaneStatus = "idle" | "running" | "failed";
@@ -54,6 +55,7 @@ export interface AgentUiState {
   error: AgentError | null;
   modelName?: string;
   agents: Record<string, AgentLaneState>;
+  fileChanges: FileChange[];
 }
 
 export const DEFAULT_AGENT_ID = "default";
