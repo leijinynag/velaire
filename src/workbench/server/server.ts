@@ -41,6 +41,8 @@ export async function handleWorkbenchRequest(request: Request, context: Workbenc
   const runMatch = url.pathname.match(/^\/api\/runs\/([^/]+)$/);
   if (request.method === "GET" && runMatch?.[1]) return json({ runId: runMatch[1], events: await readRunEvents(cwd, runMatch[1]) });
 
+  if (request.method === "GET") return serveWorkbenchAsset(url.pathname);
+
   return json({ error: "Not found" }, 404);
 }
 
@@ -66,4 +68,10 @@ async function parseJsonBody<T>(request: Request): Promise<T> {
 
 function json(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json; charset=utf-8" } });
+}
+
+function serveWorkbenchAsset(pathname: string): Response {
+  const relativePath = pathname === "/" ? "index.html" : pathname.slice(1);
+  const file = Bun.file(new URL(`../../../dist/workbench/${relativePath}`, import.meta.url));
+  return new Response(file);
 }
