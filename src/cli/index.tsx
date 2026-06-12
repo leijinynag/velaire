@@ -19,6 +19,7 @@ import { MockModelProvider } from "@/providers/mock/provider";
 import { ProviderRegistry } from "@/providers/registry";
 import type { ModelProvider } from "@/providers/types";
 import { AgentRuntime } from "@/runtime/agent-runtime";
+import { createWorkbenchServer } from "@/workbench/server";
 
 const presets = new Map<string, AsyncAgentPreset>([
   [researchLitePreset.name, researchLitePreset],
@@ -72,7 +73,29 @@ export function createProgram(): Command {
     .option("--base-url <baseUrl>", "first-run OpenAI-compatible base URL")
     .action(runOnce);
 
+  program
+    .command("workbench")
+    .description("Start the local Velaire visual agent workbench")
+    .option("--port <port>", "port to listen on", "4321")
+    .option("--provider <provider>", "model provider to use")
+    .option("--demo", "start with demo data and skip model configuration")
+    .action(startWorkbench);
+
   return program;
+}
+
+async function startWorkbench(options: { port: string; provider?: string; demo?: boolean }): Promise<void> {
+  if (!options.demo) await ensureFirstRunConfig({});
+  const port = Number.parseInt(options.port, 10);
+  const demo = !!options.demo || options.provider === "mock";
+  const runtime = demo ? undefined : await createRuntimeFromConfig(loadConfig(), { provider: options.provider });
+  const server = createWorkbenchServer({
+    cwd: process.cwd(),
+    port: Number.isFinite(port) ? port : 4321,
+    demo,
+    ...(runtime ? { runAgent: (prompt) => runtime.run(prompt) } : {}),
+  });
+  console.info(`Velaire Workbench running at http://127.0.0.1:${server.port}`);
 }
 
 export async function main(argv = process.argv): Promise<void> {
@@ -178,4 +201,3 @@ function getPreset(name: string): AsyncAgentPreset {
   }
   return preset;
 }
-

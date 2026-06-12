@@ -6,6 +6,7 @@ import { z } from "zod";
 import { toolFailure, toolSuccess } from "@/tools/results";
 import type { ToolDefinition } from "@/tools/types";
 
+import { createTextDiff, type FileChange } from "./file-change";
 import { errorMessage } from "./utils";
 
 const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
@@ -125,6 +126,7 @@ export const applyPatchTool: ToolDefinition<z.infer<typeof schema>> = {
     try {
       const files = parsePatch(patch);
       const changedFiles: string[] = [];
+      const fileChanges: FileChange[] = [];
       for (const file of files) {
         if (!file.newPath.startsWith("/")) {
           return toolFailure({ summary: "Invalid patch path", modelContent: `Patch paths must be absolute: ${file.newPath}`, code: "INVALID_PATCH_PATH", message: "Patch paths must be absolute.", details: file });
@@ -143,8 +145,15 @@ export const applyPatchTool: ToolDefinition<z.infer<typeof schema>> = {
         await mkdir(dirname(file.newPath), { recursive: true });
         await writeFile(file.newPath, updated);
         changedFiles.push(file.newPath);
+        fileChanges.push({
+          path: file.newPath,
+          kind: original ? "modified" : "created",
+          before: original,
+          after: updated,
+          diff: createTextDiff(original, updated),
+        });
       }
-      return toolSuccess({ summary: `Applied patch to ${changedFiles.length} file(s).`, modelContent: `Applied patch to ${changedFiles.length} file(s):\n${changedFiles.join("\n")}`, data: { fileCount: changedFiles.length, changedFiles } });
+      return toolSuccess({ summary: `Applied patch to ${changedFiles.length} file(s).`, modelContent: `Applied patch to ${changedFiles.length} file(s):\n${changedFiles.join("\n")}`, data: { fileCount: changedFiles.length, changedFiles, fileChanges } });
     } catch (error) {
       const message = errorMessage(error);
       return toolFailure({ summary: "Patch apply failed", modelContent: message, code: "PATCH_APPLY_FAILED", message });

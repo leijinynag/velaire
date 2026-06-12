@@ -5,6 +5,7 @@ import { z } from "zod";
 import { toolFailure, toolSuccess } from "@/tools/results";
 import type { ToolDefinition } from "@/tools/types";
 
+import type { FileChange } from "./file-change";
 import { ensureAbsolutePath, errorMessage } from "./utils";
 
 const schema = z.object({ from: z.string(), to: z.string() });
@@ -27,7 +28,8 @@ export const movePathTool: ToolDefinition<z.infer<typeof schema>> = {
 
     try {
       await rename(from, to);
-      return toolSuccess({ summary: `Moved ${from} to ${to}`, modelContent: `Moved ${from} to ${to}.`, data: { from, to } });
+      const fileChange: FileChange = { path: to, previousPath: from, kind: "moved" };
+      return toolSuccess({ summary: `Moved ${from} to ${to}`, modelContent: `Moved ${from} to ${to}.`, data: { from, to, fileChanges: [fileChange] } });
     } catch (error) {
       const message = errorMessage(error);
       return toolFailure({ summary: "Failed to move path", modelContent: message, code: "MOVE_FAILED", message, details: { from, to } });

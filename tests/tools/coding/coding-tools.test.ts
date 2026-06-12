@@ -88,7 +88,7 @@ describe("workspace tools", () => {
 
     await expect(execute("write_file", { path: filePath, content: "created" })).resolves.toMatchObject({
       ok: true,
-      data: { path: filePath, bytes: 7 },
+      data: { path: filePath, bytes: 7, fileChanges: [{ path: filePath, kind: "created", after: "created" }] },
     });
     expect(await readFile(filePath, "utf8")).toBe("created");
     await expect(execute("write_file", { path: "relative.txt", content: "nope" })).resolves.toMatchObject({
@@ -107,7 +107,7 @@ describe("workspace tools", () => {
     });
     await expect(execute("str_replace", { path: filePath, old: "two", new: "three", replaceAll: true })).resolves.toMatchObject({
       ok: true,
-      data: { replacements: 2, changed: true },
+      data: { replacements: 2, changed: true, fileChanges: [{ path: filePath, kind: "modified", before: "one two two", after: "one three three" }] },
     });
     expect(await readFile(filePath, "utf8")).toBe("one three three");
   });
@@ -143,12 +143,12 @@ describe("workspace tools", () => {
     await writeFile(sourcePath, "before\n");
     await expect(execute("move_path", { from: sourcePath, to: targetPath })).resolves.toMatchObject({
       ok: true,
-      data: { from: sourcePath, to: targetPath },
+      data: { from: sourcePath, to: targetPath, fileChanges: [{ path: targetPath, previousPath: sourcePath, kind: "moved" }] },
     });
     const patch = `--- ${targetPath}\n+++ ${targetPath}\n@@ -1,1 +1,1 @@\n-before\n+after`;
     await expect(execute("apply_patch", { patch })).resolves.toMatchObject({
       ok: true,
-      data: { changedFiles: [targetPath], fileCount: 1 },
+      data: { changedFiles: [targetPath], fileCount: 1, fileChanges: [{ path: targetPath, kind: "modified", before: "before\n", after: "after\n" }] },
     });
     expect(await readFile(targetPath, "utf8")).toBe("after\n");
   });

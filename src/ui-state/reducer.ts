@@ -1,0 +1,240 @@
+import type { RuntimeEvent } from "@/foundation/events/types";
+import type { AssistantMessage, NonSystemMessage, ToolMessage } from "@/foundation/messages/types";
+
+import type { AgentLaneState, AgentUiState } from "./agent-ui-state";
+import { DEFAULT_AGENT_ID, DEFAULT_AGENT_NAME } from "./agent-ui-state";
+
+export function createInitialAgentUiState(): AgentUiState {
+  return {
+    runId: null,
+    step: null,
+    messages: [],
+    streamingText: "",
+    isRunning: false,
+    tools: {},
+    pendingApproval: null,
+    approvals: {},
+    timeline: [],
+    tokenUsage: { latestInputTokens: 0, latestOutputTokens: 0, sessionTotalTokens: 0 },
+    error: null,
+    agents: {},
+    fileChanges: [],
+  };
+}
+
+export function reduceRuntimeEvent(state: AgentUiState, event: RuntimeEvent): AgentUiState {
+  const baseState = trackAgentLane(state, event);
+  switch (event.type) {
+    case "agent.run.started":
+      return {
+        ...baseState,
+        runId: event.runId,
+        isRunning: true,
+        error: null,
+        streamingText: "",
+        messages: [...baseState.messages, { role: "user", content: [{ type: "text", text: event.input }] }],
+      };
+
+    case "agent.step.started":
+      return { ...baseState, runId: event.runId, step: event.step, isRunning: true };
+
+    case "model.request.started":
+      return { ...baseState, runId: event.runId, step: event.step, isRunning: true };
+
+    case "model.delta":
+      return reduceModelDelta(baseState, event);
+
+    case "model.message.snapshot":
+      return baseState;
+
+    case "model.message.completed":
+      return {
+        ...baseState,
+        runId: event.runId,
+        step: event.step,
+        streamingText: "",
+        messages: appendAssistantMessage(baseState.messages, event.message),
+      };
+
+    case "tool.requested":
+      return {
+        ...baseState,
+        tools: {
+          ...baseState.tools,
+          [event.toolUseId]: { id: event.toolUseId, name: event.toolName, status: "started", agentId: event.agentId },
+        },
+      };
+
+    case "policy.decision":
+      return baseState;
+
+    case "approval.requested":
+      return {
+        ...baseState,
+        pendingApproval: { toolUseId: event.toolUseId, toolName: event.toolName, input: event.input, prompt: event.prompt, resolve: event.resolve, agentId: event.agentId },
+        approvals: {
+          ...baseState.approvals,
+          [event.toolUseId]: { toolUseId: event.toolUseId, toolName: event.toolName, input: event.input, prompt: event.prompt, resolve: event.resolve, agentId: event.agentId },
+        },
+      };
+
+    case "approval.resolved": {
+      const previous = baseState.approvals[event.toolUseId] ?? { toolUseId: event.toolUseId };
+      return {
+        ...baseState,
+        pendingApproval: baseState.pendingApproval?.toolUseId === event.toolUseId ? null : baseState.pendingApproval,
+        approvals: {
+          ...baseState.approvals,
+          [event.toolUseId]: { toolUseId: previous.toolUseId, approved: event.approved, agentId: event.agentId ?? previous.agentId },
+        },
+      };
+    }
+
+    case "tool.started":
+      return {
+        ...baseState,
+        tools: {
+          ...baseState.tools,
+          [event.toolUseId]: { id: event.toolUseId, name: event.toolName, status: "started", agentId: event.agentId },
+        },
+      };
+
+    case "tool.completed": {
+      const toolMessage: ToolMessage = {
+        role: "tool",
+        content: [
+          {
+            type: "tool_result",
+            toolUseId: event.toolUseId,
+            content: event.result.modelContent,
+            isError: !event.result.ok,
+          },
+        ],
+      };
+      return {
+        ...baseState,
+        tools: {
+          ...baseState.tools,
+          [event.toolUseId]: {
+            id: event.toolUseId,
+            name: event.toolName,
+            status: event.result.ok ? "completed" : "failed",
+            summary: event.result.summary,
+            agentId: event.agentId,
+          },
+        },
+        messages: [...baseState.messages, toolMessage],
+        fileChanges: [...baseState.fileChanges, ...(event.result.ok ? extractFileChanges(event.result.data, event.toolUseId) : [])],
+      };
+    }
+
+    case "timeline.item.added":
+      return { ...baseState, timeline: [...baseState.timeline, event.item] };
+
+    case "agent.run.completed":
+      return { ...baseState, runId: event.runId, isRunning: false, streamingText: "" };
+
+    case "agent.error":
+      return { ...baseState, runId: event.runId, isRunning: false, streamingText: "", error: event.error };
+  }
+}
+
+function extractFileChanges(data: unknown, toolUseId: string) {
+  if (!data || typeof data !== "object" || !("fileChanges" in data)) return [];
+  const changes = (data as { fileChanges?: unknown }).fileChanges;
+  if (!Array.isArray(changes)) return [];
+  return changes
+    .filter((change): change is Record<string, unknown> => !!change && typeof change === "object" && typeof change.path === "string")
+    .map((change) => ({ ...change, toolUseId: typeof change.toolUseId === "string" ? change.toolUseId : toolUseId })) as never[];
+}
+
+function reduceModelDelta(state: AgentUiState, event: Extract<RuntimeEvent, { type: "model.delta" }>): AgentUiState {
+  if (event.delta.type === "text_delta") {
+    return { ...state, runId: event.runId, step: event.step, isRunning: true, streamingText: state.streamingText + event.delta.text };
+  }
+
+  if (event.delta.type === "usage") {
+    const usage = event.delta.usage;
+    return {
+      ...state,
+      tokenUsage: {
+        latestInputTokens: usage.inputTokens,
+        latestOutputTokens: usage.outputTokens,
+        sessionTotalTokens: state.tokenUsage.sessionTotalTokens + usage.totalTokens,
+      },
+    };
+  }
+
+  if (event.delta.type === "tool_use_delta") {
+    const previous = state.tools[event.delta.toolUseId];
+    const toolName = event.delta.toolName ?? previous?.name ?? "tool";
+    const input = parseToolUseDeltaInput(event.delta.inputJsonDelta);
+    const toolUseMessage: AssistantMessage = {
+      role: "assistant",
+      content: [{ type: "tool_use", id: event.delta.toolUseId, name: toolName, input }],
+    };
+    return {
+      ...state,
+      messages: upsertToolUseMessage(state.messages, toolUseMessage),
+      tools: {
+        ...state.tools,
+        [event.delta.toolUseId]: {
+          id: event.delta.toolUseId,
+          name: toolName,
+          status: previous?.status ?? "started",
+          summary: previous?.summary,
+          agentId: event.agentId ?? previous?.agentId,
+        },
+      },
+    };
+  }
+
+  return state;
+}
+
+function appendAssistantMessage(messages: NonSystemMessage[], message: AssistantMessage): NonSystemMessage[] {
+  return [...messages, message];
+}
+
+function parseToolUseDeltaInput(inputJsonDelta: string | undefined): Record<string, unknown> {
+  if (!inputJsonDelta) return {};
+  try {
+    const parsed = JSON.parse(inputJsonDelta) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function upsertToolUseMessage(messages: NonSystemMessage[], message: AssistantMessage): NonSystemMessage[] {
+  const toolUse = message.content[0];
+  if (!toolUse || toolUse.type !== "tool_use") return [...messages, message];
+  const next = [...messages];
+  const existingIndex = next.findIndex(
+    (candidate) => candidate.role === "assistant" && candidate.content.some((content) => content.type === "tool_use" && content.id === toolUse.id),
+  );
+  if (existingIndex >= 0) next[existingIndex] = message;
+  else next.push(message);
+  return next;
+}
+
+function trackAgentLane(state: AgentUiState, event: RuntimeEvent): AgentUiState {
+  const agentId = "agentId" in event && event.agentId ? event.agentId : DEFAULT_AGENT_ID;
+  const agentName = "agentName" in event && event.agentName ? event.agentName : agentId === DEFAULT_AGENT_ID ? DEFAULT_AGENT_NAME : agentId;
+  const previous = state.agents[agentId];
+  const nextLane: AgentLaneState = {
+    id: agentId,
+    name: previous?.name ?? agentName,
+    status: laneStatusForEvent(event, previous?.status ?? "idle"),
+    step: "step" in event && typeof event.step === "number" ? event.step : previous?.step ?? null,
+    eventCount: (previous?.eventCount ?? 0) + 1,
+  };
+  return { ...state, agents: { ...state.agents, [agentId]: nextLane } };
+}
+
+function laneStatusForEvent(event: RuntimeEvent, previous: AgentLaneState["status"]): AgentLaneState["status"] {
+  if (event.type === "agent.error") return "failed";
+  if (event.type === "agent.run.completed" || event.type === "tool.completed") return "idle";
+  if (event.type === "agent.run.started" || event.type === "agent.step.started" || event.type === "model.delta" || event.type === "tool.started") return "running";
+  return previous;
+}

@@ -29,12 +29,14 @@
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
     "build:js": "rm -rf dist/js && bun build ./index.ts --outdir ./dist/js --splitting --target bun",
     "build:bin": "rm -rf dist/bin && bun build ./index.ts --compile --outfile dist/bin/velaire",
+    "build:workbench": "vite build --config src/workbench/client/vite.config.ts",
     "hooks:install": "git config core.hooksPath .githooks"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
     "@types/bun": "latest",
     "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "eslint": "^10.0.2",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-import-x": "^4.16.1",
@@ -56,6 +58,9 @@
     "marked-terminal": "^7.3.0",
     "openai": "^6.33.0",
     "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-markdown": "^10.1.0",
+    "vite": "^7.2.7",
     "yaml": "^2.8.3",
     "zod": "^4.3.6"
   }

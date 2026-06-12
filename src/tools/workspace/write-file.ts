@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import { z } from "zod";
@@ -6,6 +6,7 @@ import { z } from "zod";
 import { toolFailure, toolSuccess } from "@/tools/results";
 import type { ToolDefinition } from "@/tools/types";
 
+import { createTextDiff, type FileChange } from "./file-change";
 import { ensureAbsolutePath, errorMessage } from "./utils";
 
 const schema = z.object({ path: z.string(), content: z.string() });
@@ -23,12 +24,16 @@ export const writeFileTool: ToolDefinition<z.infer<typeof schema>> = {
     }
 
     try {
+      const before = await readExistingFile(path);
       await mkdir(dirname(path), { recursive: true });
       await writeFile(path, content);
+      const fileChange: FileChange = before === null
+        ? { path, kind: "created", after: content, diff: createTextDiff("", content) }
+        : { path, kind: "modified", before, after: content, diff: createTextDiff(before, content) };
       return toolSuccess({
         summary: `Wrote ${content.length} byte(s) to ${path}`,
         modelContent: `Successfully wrote ${content.length} byte(s) to ${path}.`,
-        data: { path, bytes: Buffer.byteLength(content), chars: content.length },
+        data: { path, bytes: Buffer.byteLength(content), chars: content.length, fileChanges: [fileChange] },
       });
     } catch (error) {
       const message = errorMessage(error);
@@ -36,3 +41,12 @@ export const writeFileTool: ToolDefinition<z.infer<typeof schema>> = {
     }
   },
 };
+
+async function readExistingFile(path: string): Promise<string | null> {
+  try {
+    return await readFile(path, "utf8");
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+    throw error;
+  }
+}
