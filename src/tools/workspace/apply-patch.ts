@@ -6,8 +6,8 @@ import { z } from "zod";
 import { toolFailure, toolSuccess } from "@/tools/results";
 import type { ToolDefinition } from "@/tools/types";
 
-import { errorMessage } from "./utils";
 import { createTextDiff, type FileChange } from "./file-change";
+import { errorMessage } from "./utils";
 
 const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 

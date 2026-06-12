@@ -1,6 +1,7 @@
 import ReactMarkdown from "react-markdown";
 
 import type { NonSystemMessage } from "@/foundation/messages/types";
+import type { AgentUiState } from "@/ui-state";
 import { deriveConversationView, deriveMetricsView } from "@/ui-state";
 
 import { useWorkbenchRun } from "./hooks/use-workbench-run";
@@ -55,7 +56,7 @@ export function WorkbenchApp() {
   );
 }
 
-function AgentLanes({ agents }: { agents: ReturnType<typeof import("@/ui-state").createInitialAgentUiState>["agents"] }) {
+function AgentLanes({ agents }: { agents: AgentUiState["agents"] }) {
   const lanes = Object.values(agents);
   return <div className="agent-lanes">{(lanes.length ? lanes : [{ id: "default", name: "Default Agent", status: "idle", step: null, eventCount: 0 }]).map((agent) => <div className="agent-lane" key={agent.id}><span>{agent.name}</span><small>{agent.status}</small></div>)}</div>;
 }
@@ -82,7 +83,7 @@ function Composer({ onSubmit, disabled }: { onSubmit: (prompt: string) => Promis
   return <form className="composer" onSubmit={(event) => { event.preventDefault(); const form = event.currentTarget; const input = new FormData(form).get("prompt")?.toString().trim(); if (input) void onSubmit(input); form.reset(); }}><textarea name="prompt" placeholder="Ask Velaire to inspect this workspace..." /><button disabled={disabled} type="submit">Run</button></form>;
 }
 
-function TimelinePanel({ state, onSelectTool }: { state: ReturnType<typeof import("@/ui-state").createInitialAgentUiState>; onSelectTool: (id: string) => void }) {
+function TimelinePanel({ state, onSelectTool }: { state: AgentUiState; onSelectTool: (id: string) => void }) {
   const toolRuns = Object.values(state.tools);
   return <div className="panel-body"><h2>Timeline</h2><div className="timeline-item">Run {state.runId ?? "not started"}</div>{toolRuns.map((tool) => <button className="timeline-item" key={tool.id} onClick={() => onSelectTool(tool.id)}>{tool.name} · {tool.status}</button>)}</div>;
 }
@@ -103,7 +104,7 @@ function MetricsPanel({ metrics }: { metrics: ReturnType<typeof deriveMetricsVie
   return <div className="panel-body"><h2>Metrics</h2><pre>{JSON.stringify(metrics, null, 2)}</pre></div>;
 }
 
-function DiffViewer({ changes }: { changes: ReturnType<typeof import("@/ui-state").createInitialAgentUiState>["fileChanges"] }) {
+function DiffViewer({ changes }: { changes: AgentUiState["fileChanges"] }) {
   return <div className="panel-body"><h2>Code Diff</h2>{changes.length === 0 ? <p>No file changes yet.</p> : changes.map((change) => <article className="diff-card" key={`${change.toolUseId}:${change.path}`}><header><strong>{change.kind}</strong><span>{change.path}</span></header>{change.previousPath ? <small>from {change.previousPath}</small> : null}<pre>{change.diff ?? renderFallbackDiff(change.before, change.after)}</pre></article>)}</div>;
 }
 

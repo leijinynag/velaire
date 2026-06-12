@@ -5,8 +5,8 @@ import { z } from "zod";
 import { toolFailure, toolSuccess } from "@/tools/results";
 import type { ToolDefinition } from "@/tools/types";
 
-import { ensureAbsolutePath, errorMessage } from "./utils";
 import { createTextDiff, type FileChange } from "./file-change";
+import { ensureAbsolutePath, errorMessage } from "./utils";
 
 const schema = z.object({
   path: z.string(),

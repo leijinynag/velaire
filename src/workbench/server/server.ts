@@ -1,8 +1,8 @@
+import type { RuntimeEvent } from "@/foundation/events/types";
+
 import { createDemoEvents, createDemoRunId } from "./demo-events";
 import { appendRunEvent, listRunLogs, readRunEvents } from "./run-log";
 import { runtimeEventsResponse } from "./sse";
-
-import type { RuntimeEvent } from "@/foundation/events/types";
 
 export interface CreateWorkbenchServerOptions {
   cwd: string;
