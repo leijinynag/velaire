@@ -23,6 +23,28 @@ bun run build:bin
 
 The package exposes the `velaire` executable. During local development use `bun run dev` or `bun run index.ts`.
 
+### Web Workbench demo
+
+Workbench is the browser companion to the terminal UI. It renders the same runtime events as a visual agent workbench with conversation, agent lanes, timeline, inspector panels, metrics, and code diffs.
+
+Try it without configuring a model:
+
+```bash
+bun install
+bun run build:workbench
+bun run build:bin
+./dist/bin/velaire workbench --demo
+```
+
+For real usage, configure a model and start the workbench from a project directory:
+
+```bash
+velaire config model add
+velaire workbench
+```
+
+Use `velaire` for the Ink terminal UI and `velaire workbench` for the React visual workbench. Both are powered by the shared `RuntimeEvent` protocol.
+
 ### Configure a model
 
 Velaire stores user configuration in `${VELAIRE_HOME:-~/.velaire}/config.yaml`.
@@ -161,6 +183,7 @@ bun run hooks:install
 - [Providers](./docs/providers.md)
 - [Policy](./docs/policy.md)
 - [UI](./docs/ui.md)
+- [Workbench](./docs/workbench.md)
 - [Skills](./docs/skills.md)
 - [Code convention](./docs/code-convention.md)
 

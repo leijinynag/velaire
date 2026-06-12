@@ -2,15 +2,19 @@ import { createDemoEvents, createDemoRunId } from "./demo-events";
 import { appendRunEvent, listRunLogs, readRunEvents } from "./run-log";
 import { runtimeEventsResponse } from "./sse";
 
+import type { RuntimeEvent } from "@/foundation/events/types";
+
 export interface CreateWorkbenchServerOptions {
   cwd: string;
   port?: number;
   demo?: boolean;
+  runAgent?: (prompt: string) => AsyncIterable<RuntimeEvent>;
 }
 
 export interface WorkbenchRequestContext {
   cwd: string;
   demo?: boolean;
+  runAgent?: (prompt: string) => AsyncIterable<RuntimeEvent>;
 }
 
 interface CreateRunBody {
@@ -33,7 +37,7 @@ export async function handleWorkbenchRequest(request: Request, context: Workbenc
   if (request.method === "GET" && url.pathname === "/api/health") return json({ ok: true });
   if (request.method === "GET" && url.pathname === "/api/bootstrap") return json({ demo, workspace: cwd, presets: ["coding", "research-lite"] });
   if (request.method === "GET" && url.pathname === "/api/runs") return json({ runs: await listRunLogs(cwd) });
-  if (request.method === "POST" && url.pathname === "/api/runs") return createRun(request, cwd, demo);
+  if (request.method === "POST" && url.pathname === "/api/runs") return createRun(request, context);
 
   const runEventsMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/events$/);
   if (request.method === "GET" && runEventsMatch?.[1]) return runtimeEventsResponse(await readRunEvents(cwd, runEventsMatch[1]));
@@ -46,13 +50,13 @@ export async function handleWorkbenchRequest(request: Request, context: Workbenc
   return json({ error: "Not found" }, 404);
 }
 
-async function createRun(request: Request, cwd: string, demo: boolean): Promise<Response> {
+async function createRun(request: Request, context: WorkbenchRequestContext): Promise<Response> {
+  const { cwd, demo = false, runAgent } = context;
   const body = await parseJsonBody<CreateRunBody>(request);
   const input = body.prompt?.trim() || "Show the Velaire workbench demo";
-  if (!demo) return json({ error: "Only demo runs are supported by this server adapter so far." }, 400);
-
-  const runId = createDemoRunId();
-  for (const event of createDemoEvents(runId, input)) {
+  const runId = demo || !runAgent ? createDemoRunId() : `run_${Date.now().toString(36)}`;
+  const events = demo || !runAgent ? createDemoEvents(runId, input) : runAgent(input);
+  for await (const event of events) {
     await appendRunEvent(cwd, runId, event);
   }
   return json({ runId });

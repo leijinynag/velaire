@@ -41,6 +41,20 @@ Expected coding preset tools:
 - `mkdir`: directory creation through policy.
 - `move_path`: path move/rename through policy.
 
+Workspace write tools should return structured `fileChanges` in successful `data` when they create, edit, patch, or move files. The Web Workbench uses this contract to render traceable code diffs.
+
+```ts
+interface FileChange {
+  path: string;
+  kind: "created" | "modified" | "moved" | "deleted";
+  previousPath?: string;
+  before?: string;
+  after?: string;
+  diff?: string;
+  toolUseId?: string;
+}
+```
+
 ## Shell tool
 
 `bash` should support cwd, timeout, abort, stdout/stderr separation, exit code, output caps, and risk classification. Risky commands include destructive git operations, recursive delete/chmod, `curl | sh`, force push, and writes to system paths.

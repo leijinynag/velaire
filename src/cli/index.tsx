@@ -87,7 +87,14 @@ export function createProgram(): Command {
 async function startWorkbench(options: { port: string; provider?: string; demo?: boolean }): Promise<void> {
   if (!options.demo) await ensureFirstRunConfig({});
   const port = Number.parseInt(options.port, 10);
-  const server = createWorkbenchServer({ cwd: process.cwd(), port: Number.isFinite(port) ? port : 4321, demo: !!options.demo || options.provider === "mock" });
+  const demo = !!options.demo || options.provider === "mock";
+  const runtime = demo ? undefined : await createRuntimeFromConfig(loadConfig(), { provider: options.provider });
+  const server = createWorkbenchServer({
+    cwd: process.cwd(),
+    port: Number.isFinite(port) ? port : 4321,
+    demo,
+    ...(runtime ? { runAgent: (prompt) => runtime.run(prompt) } : {}),
+  });
   console.info(`Velaire Workbench running at http://127.0.0.1:${server.port}`);
 }
 

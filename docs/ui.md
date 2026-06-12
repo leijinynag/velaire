@@ -5,10 +5,36 @@ The Velaire UI should render runtime state from events, not infer behavior from 
 ## Data flow
 
 ```text
-Runtime events -> TUI store/reducer -> ViewModel -> Ink components
+Runtime events -> shared UI state reducer -> TUI ViewModel / Web Workbench state -> UI components
 ```
 
 The reducer/view-model boundary is the main testing surface.
+
+## Dual UI architecture
+
+Velaire exposes two interaction surfaces:
+
+- Ink TUI for keyboard-first terminal workflows.
+- React Workbench for visual debugging, run replay, tool inspection, code diffs, and future multi-agent lanes.
+
+Both UIs consume `RuntimeEvent` through `src/ui-state`. The TUI adds terminal-specific view models; the Workbench adds browser layout and inspector selection state.
+
+```mermaid
+flowchart LR
+  Runtime[AgentRuntime]
+  Events[RuntimeEvent Stream]
+  State[Shared UI State]
+  TUI[Ink TUI]
+  Web[React Workbench]
+  Logs[JSONL Run Logs]
+
+  Runtime --> Events
+  Events --> State
+  State --> TUI
+  State --> Web
+  Events --> Logs
+  Logs --> Web
+```
 
 ## Layout targets
 
@@ -23,6 +49,8 @@ A complete TUI should include:
 - timeline/risk panel
 - input box
 - footer with token usage, step count, tool count, and status
+
+The Web Workbench should include conversation, agent lanes, timeline, tool inspector, policy panel, transcript viewer, metrics, and code diff visualization.
 
 ## Slash commands
 
