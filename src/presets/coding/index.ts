@@ -1,3 +1,4 @@
+import { createSkillsMiddleware } from "@/skills/middleware";
 import { createCodingToolSystem } from "@/tools/coding";
 import { ToolRegistry } from "@/tools/registry";
 
@@ -13,7 +14,8 @@ export const codingPreset: AsyncAgentPreset = {
     return createCodingToolRegistry().tools;
   },
   createMiddleware() {
-    return createCodingToolRegistry().middleware;
+    const { middleware } = createCodingToolRegistry();
+    return [...middleware, createSkillsMiddleware()];
   },
 };
 

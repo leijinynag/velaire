@@ -33,6 +33,21 @@ export class ApprovalManager {
     this.processQueue();
   }
 
+  respondTo(toolUseId: string, decision: ApprovalDecision): boolean {
+    if (this.request?.toolUseId === toolUseId) {
+      this.request.resolve(decision);
+      this.request = undefined;
+      this.processQueue();
+      return true;
+    }
+    const idx = this.queue.findIndex((r) => r.toolUseId === toolUseId);
+    if (idx === -1) return false;
+    const item = this.queue.splice(idx, 1)[0];
+    if (!item) return false;
+    item.resolve(decision);
+    return true;
+  }
+
   subscribe(callback: (request: ApprovalRequest | null) => void): () => void {
     this.subscriber = callback;
     this.processQueue();

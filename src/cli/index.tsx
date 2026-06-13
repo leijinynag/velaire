@@ -13,19 +13,19 @@ import { loadProjectAllowList, persistAllowedTool } from "@/policy/persistence";
 import type { PolicyProfile } from "@/policy/types";
 import { codingPreset } from "@/presets/coding";
 import { loadAgentsGuidanceMessage } from "@/presets/coding/context";
+import { PresetRegistry } from "@/presets/registry";
 import { researchLitePreset } from "@/presets/research-lite";
 import type { AsyncAgentPreset } from "@/presets/types";
 import { MockModelProvider } from "@/providers/mock/provider";
 import { ProviderRegistry } from "@/providers/registry";
 import type { ModelProvider } from "@/providers/types";
 import { AgentRuntime } from "@/runtime/agent-runtime";
+import { SessionManager } from "@/workbench/server/session-manager";
 import { createWorkbenchServer } from "@/workbench/server";
 
-//todo: add more presets
-const presets = new Map<string, AsyncAgentPreset>([
-  [researchLitePreset.name, researchLitePreset],
-  [codingPreset.name, codingPreset],
-]);
+export const presetRegistry = new PresetRegistry();
+presetRegistry.register(researchLitePreset);
+presetRegistry.register(codingPreset);
 
 export type RunCommandOptions = {
   provider?: string;
@@ -79,22 +79,37 @@ export function createProgram(): Command {
     .description("Start the local Velaire visual agent workbench")
     .option("--port <port>", "port to listen on", "4321")
     .option("--provider <provider>", "model provider to use")
+    .option("--workspace <path>", "default workspace directory (defaults to cwd)")
     .option("--demo", "start with demo data and skip model configuration")
     .action(startWorkbench);
 
   return program;
 }
 
-async function startWorkbench(options: { port: string; provider?: string; demo?: boolean }): Promise<void> {
+async function startWorkbench(options: { port: string; provider?: string; workspace?: string; demo?: boolean }): Promise<void> {
   if (!options.demo) await ensureFirstRunConfig({});
   const port = Number.parseInt(options.port, 10);
   const demo = !!options.demo || options.provider === "mock";
-  const runtime = demo ? undefined : await createRuntimeFromConfig(loadConfig(), { provider: options.provider });
+  const defaultWorkspace = options.workspace ?? process.cwd();
+
+  const config = loadConfig();
+
+  const sessionManager = new SessionManager(async (workspace, approvalManager) => {
+    return createRuntimeFromConfig(config, { provider: options.provider }, { approvalManager, cwd: workspace });
+  });
+
   const server = createWorkbenchServer({
-    cwd: process.cwd(),
+    cwd: defaultWorkspace,
     port: Number.isFinite(port) ? port : 4321,
     demo,
-    ...(runtime ? { runAgent: (prompt) => runtime.run(prompt) } : {}),
+    createRuntime: demo ? undefined : async (workspace, approvalManager) => {
+      return createRuntimeFromConfig(config, { provider: options.provider }, { approvalManager, cwd: workspace });
+    },
+    ...(demo ? { runAgent: (prompt) => {
+      const { createDemoEvents, createDemoRunId } = require("@/workbench/server/demo-events");
+      const runId = createDemoRunId();
+      return createDemoEvents(runId, prompt);
+    } } : {}),
   });
   console.info(`Velaire Workbench running at http://127.0.0.1:${server.port}`);
 }
@@ -160,13 +175,12 @@ async function runOnce(options: RunCommandOptions): Promise<void> {
 export async function createRuntimeFromConfig(
   config: VelaireConfig,
   options: Pick<RunCommandOptions, "provider" | "preset" | "modelName">,
-  runtimeOptions: { approvalManager?: Pick<ApprovalManager, "requestApproval"> } = {},
+  runtimeOptions: { approvalManager?: Pick<ApprovalManager, "requestApproval">; cwd?: string } = {},
 ): Promise<AgentRuntime> {
-  // 解析运行配置，根据 options 和 config。
   const resolved = resolveRunConfiguration(options, config);
   const provider = createProvider(resolved.providerName, resolved.modelEntry);
-  const preset = getPreset(resolved.presetName);
-  const cwd = process.cwd(); // 获取当前工作目录，即命令执行时所在的目录
+  const preset = presetRegistry.get(resolved.presetName);
+  const cwd = runtimeOptions.cwd ?? process.cwd();
   const runtime = new AgentRuntime({
     provider,
     systemPrompt: await preset.createSystemPrompt({ cwd }),
@@ -189,17 +203,8 @@ function resolveModelEntry(modelName: string | undefined, config: VelaireConfig)
   const name = modelName ?? config.defaultModel;
   const entry = config.models.find((model) => model.name === name);
   if (!entry) {
-    // 非 mock 运行必须明确找到配置，避免误用空 API key 发起真实请求。
     throw new Error(`Model "${name}" is not configured. Run \`velaire config model add\` first.`);
   }
   return entry;
 }
 
-function getPreset(name: string): AsyncAgentPreset {
-  const preset = presets.get(name);
-  if (!preset) {
-    // 非交互 run 不能向用户追问，因此未知 preset 必须直接失败并给出可用值。
-    throw new Error(`Unsupported preset: ${name}. Available presets: ${[...presets.keys()].join(", ")}`);
-  }
-  return preset;
-}
