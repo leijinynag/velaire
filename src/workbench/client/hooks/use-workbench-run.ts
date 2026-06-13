@@ -21,6 +21,45 @@ function workbenchReducer(state: AgentUiState, action: WorkbenchAction): AgentUi
   return reduceRuntimeEvent(state, action);
 }
 
+// ── localStorage helpers ──────────────────────────────────────────────────────
+
+const LS_SESSION_KEY = "velaire-session-v1";
+
+function saveSessionToStorage(sessionId: string, workspace: string) {
+  try { localStorage.setItem(LS_SESSION_KEY, JSON.stringify({ sessionId, workspace })); } catch { /* ignore */ }
+}
+
+function loadSessionFromStorage(): { sessionId: string; workspace: string } | null {
+  try {
+    const raw = localStorage.getItem(LS_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === "object" && "sessionId" in parsed && "workspace" in parsed) {
+      return parsed as { sessionId: string; workspace: string };
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+function clearSessionFromStorage() {
+  try { localStorage.removeItem(LS_SESSION_KEY); } catch { /* ignore */ }
+}
+
+// ── EventSource with auto-reconnect ──────────────────────────────────────────
+
+function makeSessionEventSource(
+  sid: string,
+  onEvent: (event: RuntimeEvent) => void,
+  onError: (src: EventSource) => void,
+): EventSource {
+  const source = new EventSource(`/api/sessions/${sid}/events`);
+  source.addEventListener("runtime", (message) => {
+    try { onEvent(JSON.parse((message as MessageEvent<string>).data) as RuntimeEvent); } catch { /* ignore */ }
+  });
+  source.onerror = () => onError(source);
+  return source;
+}
+
 export function useWorkbenchRun() {
   const [state, dispatch] = useReducer(workbenchReducer, undefined, createInitialAgentUiState);
   const [selectedToolUseId, setSelectedToolUseId] = useState<string | null>(null);
@@ -28,9 +67,8 @@ export function useWorkbenchRun() {
   const [mode, setMode] = useState<"demo" | "live">("live");
   const [error, setError] = useState<string | null>(null);
   const [runs, setRuns] = useState<RunLogSummary[]>([]);
-  // Sessions 面板默认展开
   const [activeRailItem, setActiveRailItem] = useState<string | null>("Sessions");
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionId, setSessionIdState] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [workspace, setWorkspace] = useState<string | null>(null);
   const [serverWorkspace, setServerWorkspace] = useState<string | null>(null);
@@ -39,7 +77,10 @@ export function useWorkbenchRun() {
   const [theme, setThemeState] = useState<"dark" | "light">(() => {
     try { return (localStorage.getItem("velaire-theme") as "dark" | "light") ?? "dark"; } catch { return "dark"; }
   });
+
   const eventSourceRef = useRef<EventSource | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeSessionIdRef = useRef<string | null>(null);
 
   // Apply theme to DOM
   useEffect(() => {
@@ -48,6 +89,40 @@ export function useWorkbenchRun() {
   }, [theme]);
 
   const toggleTheme = useCallback(() => setThemeState((prev) => (prev === "dark" ? "light" : "dark")), []);
+
+  // Persist sessionId + workspace to localStorage whenever they change
+  const setSessionId = useCallback((id: string | null, ws?: string) => {
+    setSessionIdState(id);
+    activeSessionIdRef.current = id;
+    if (id && ws) saveSessionToStorage(id, ws);
+    else if (!id) clearSessionFromStorage();
+  }, []);
+
+  const openSessionEventSource = useCallback((sid: string) => {
+    if (reconnectTimerRef.current) { clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null; }
+    eventSourceRef.current?.close();
+    activeSessionIdRef.current = sid;
+
+    const source = makeSessionEventSource(
+      sid,
+      (event) => dispatch(event),
+      (src) => {
+        // Only schedule reconnect if this source is still the active one
+        if (eventSourceRef.current !== src) return;
+        src.close();
+        eventSourceRef.current = null;
+        const currentSid = activeSessionIdRef.current;
+        if (!currentSid) return;
+        reconnectTimerRef.current = setTimeout(() => {
+          reconnectTimerRef.current = null;
+          if (activeSessionIdRef.current === currentSid) {
+            openSessionEventSource(currentSid);
+          }
+        }, 1500);
+      },
+    );
+    eventSourceRef.current = source;
+  }, []);
 
   const fetchRuns = useCallback(() => {
     void fetch("/api/runs")
@@ -71,6 +146,7 @@ export function useWorkbenchRun() {
       .catch(() => setSkills([]));
   }, []);
 
+  // On mount: bootstrap + restore session from localStorage
   useEffect(() => {
     void fetch("/api/bootstrap")
       .then((r) => r.json())
@@ -78,17 +154,41 @@ export function useWorkbenchRun() {
         setMode(bootstrap.demo ? "demo" : "live");
         if (bootstrap.workspace) {
           setServerWorkspace(bootstrap.workspace);
-          setWorkspace(bootstrap.workspace);
           refreshSkills(bootstrap.workspace);
         }
         if (bootstrap.presets) {
           setAvailablePresets(Array.isArray(bootstrap.presets) ? bootstrap.presets as { name: string; description: string }[] : []);
         }
+
+        // Restore persisted session (only in live mode)
+        if (!bootstrap.demo) {
+          const stored = loadSessionFromStorage();
+          if (stored) {
+            // Verify the session still exists on the server before restoring
+            void fetch(`/api/sessions/${stored.sessionId}`)
+              .then((r) => {
+                if (!r.ok) { clearSessionFromStorage(); return; }
+                return r.json().then((data: { sessionId?: string; workspace?: string; events?: RuntimeEvent[] }) => {
+                  if (!data.sessionId) { clearSessionFromStorage(); return; }
+                  setSessionIdState(stored.sessionId);
+                  activeSessionIdRef.current = stored.sessionId;
+                  setWorkspace(stored.workspace);
+                  openSessionEventSource(stored.sessionId);
+                });
+              })
+              .catch(() => clearSessionFromStorage());
+          }
+          // Also set serverWorkspace as workspace default if no stored session
+          if (!loadSessionFromStorage() && bootstrap.workspace) {
+            setWorkspace(bootstrap.workspace);
+          }
+        }
       })
       .catch(() => setError("Failed to load workbench bootstrap metadata."));
     fetchRuns();
     fetchSessions();
-  }, [fetchRuns, fetchSessions, refreshSkills]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!state.isRunning) {
@@ -97,25 +197,13 @@ export function useWorkbenchRun() {
     }
   }, [state.isRunning, fetchRuns, fetchSessions]);
 
-  const openSessionEventSource = useCallback((sid: string) => {
-    eventSourceRef.current?.close();
-    const source = new EventSource(`/api/sessions/${sid}/events`);
-    eventSourceRef.current = source;
-    source.addEventListener("runtime", (message) => {
-      dispatch(JSON.parse(message.data) as RuntimeEvent);
-    });
-    source.onerror = () => {
-      source.close();
-      if (eventSourceRef.current === source) eventSourceRef.current = null;
-    };
-  }, []);
-
   const openEventSource = useCallback((url: string) => {
+    if (reconnectTimerRef.current) { clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null; }
     eventSourceRef.current?.close();
     const source = new EventSource(url);
     eventSourceRef.current = source;
     source.addEventListener("runtime", (message) => {
-      dispatch(JSON.parse(message.data) as RuntimeEvent);
+      try { dispatch(JSON.parse((message as MessageEvent<string>).data) as RuntimeEvent); } catch { /* ignore */ }
     });
     source.onerror = () => {
       source.close();
@@ -137,8 +225,8 @@ export function useWorkbenchRun() {
         return null;
       }
       dispatch({ type: "reset" });
-      setSessionId(data.sessionId);
       const actualWorkspace = data.workspace ?? ws;
+      setSessionId(data.sessionId, actualWorkspace);
       setWorkspace(actualWorkspace);
       setSelectedToolUseId(null);
       setSelectedInspector("timeline");
@@ -150,7 +238,28 @@ export function useWorkbenchRun() {
       setError(e instanceof Error ? e.message : "Failed to create session");
       return null;
     }
-  }, [openSessionEventSource, refreshSkills, fetchSessions]);
+  }, [openSessionEventSource, refreshSkills, fetchSessions, setSessionId]);
+
+  // Switch to an existing session: load its events and reopen SSE
+  const switchSession = useCallback(async (sid: string) => {
+    setError(null);
+    try {
+      const response = await fetch(`/api/sessions/${sid}`);
+      if (!response.ok) { setError("Session not found"); return; }
+      const data = (await response.json()) as { sessionId: string; workspace: string };
+      dispatch({ type: "reset" });
+      setSelectedToolUseId(null);
+      setSelectedInspector("timeline");
+      setSessionId(data.sessionId, data.workspace);
+      setWorkspace(data.workspace);
+      refreshSkills(data.workspace);
+      // openSessionEventSource will replay all historical events from server
+      openSessionEventSource(data.sessionId);
+      fetchSessions();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to switch session");
+    }
+  }, [openSessionEventSource, refreshSkills, fetchSessions, setSessionId]);
 
   const switchWorkspace = useCallback(async (ws: string) => {
     dispatch({ type: "reset" });
@@ -159,15 +268,18 @@ export function useWorkbenchRun() {
     eventSourceRef.current?.close();
     setSessionId(null);
     return createSession(ws);
-  }, [createSession]);
+  }, [createSession, setSessionId]);
 
-  // Submit prompt to current session (accumulates, no reset)
   const submitPrompt = useCallback(async (prompt: string) => {
-    if (!sessionId) {
-      setError("No active session.");
-      return;
-    }
+    if (!sessionId) { setError("No active session."); return; }
     setError(null);
+
+    // Ensure EventSource is open before submitting
+    const src = eventSourceRef.current;
+    if (!src || src.readyState === EventSource.CLOSED) {
+      openSessionEventSource(sessionId);
+    }
+
     const response = await fetch(`/api/sessions/${sessionId}/runs`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -177,9 +289,8 @@ export function useWorkbenchRun() {
     if (!response.ok) {
       setError(data.error ?? "Failed to start run");
     }
-  }, [sessionId]);
+  }, [sessionId, openSessionEventSource]);
 
-  // Legacy run for demo mode (no session, always resets)
   const runPrompt = useCallback(async (prompt: string) => {
     setError(null);
     dispatch({ type: "reset" });
@@ -230,6 +341,7 @@ export function useWorkbenchRun() {
     theme,
     toggleTheme,
     createSession,
+    switchSession,
     switchWorkspace,
     submitPrompt,
     runPrompt,

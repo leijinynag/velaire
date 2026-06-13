@@ -86,6 +86,24 @@ export async function handleWorkbenchRequest(request: Request, context: Workbenc
     return getSkills(skillCwd);
   }
 
+  // Resolve a directory name to an absolute path (for File System Access API picks)
+  if (method === "GET" && pathname === "/api/resolve-path") {
+    const name = url.searchParams.get("name");
+    if (!name) return json({ error: "name is required" }, 400);
+    // Check if it's already absolute
+    if (name.startsWith("/")) return json({ path: name });
+    // Try to find the folder relative to server cwd
+    const { resolve, join: pathJoin } = await import("node:path");
+    const candidate = pathJoin(cwd, name);
+    try {
+      const { stat } = await import("node:fs/promises");
+      const s = await stat(candidate);
+      if (s.isDirectory()) return json({ path: resolve(candidate) });
+    } catch { /* not found */ }
+    // Return null — client will use the name as-is
+    return json({ path: null });
+  }
+
   // Session API (only available when sessionManager provided)
   if (sessionManager) {
     if (method === "GET" && pathname === "/api/sessions") return json({ sessions: sessionManager.list() });

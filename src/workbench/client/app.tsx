@@ -22,6 +22,7 @@ export function WorkbenchApp() {
     theme,
     toggleTheme,
     createSession,
+    switchSession,
     switchWorkspace,
     submitPrompt,
     runPrompt,
@@ -87,6 +88,7 @@ export function WorkbenchApp() {
               serverWorkspace={serverWorkspace}
               availablePresets={availablePresets}
               onNew={(ws, preset) => void createSession(ws, preset)}
+              onSelect={(sid) => void switchSession(sid)}
               onRefresh={fetchSessions}
             />
           </RailDrawer>
@@ -122,6 +124,62 @@ export function WorkbenchApp() {
   );
 }
 
+// ── Folder Picker ──────────────────────────────────────────────────────────────
+
+// File System Access API is only available in secure contexts (HTTPS/localhost).
+const hasFolderPicker = typeof window !== "undefined" && "showDirectoryPicker" in window;
+
+function FolderPickerButton({
+  onPick,
+  className,
+  children,
+}: {
+  onPick: (path: string) => void;
+  className?: string;
+  children?: React.ReactNode;
+}) {
+  const [picking, setPicking] = useState(false);
+  const [pickedName, setPickedName] = useState<string | null>(null);
+
+  async function handleClick() {
+    if (!hasFolderPicker) return;
+    setPicking(true);
+    try {
+      // showDirectoryPicker() opens OS folder browser
+      const handle = await (window as unknown as { showDirectoryPicker(): Promise<{ name: string }> }).showDirectoryPicker();
+      setPickedName(handle.name);
+      // Send handle name to server to resolve the absolute path
+      const res = await fetch(`/api/resolve-path?name=${encodeURIComponent(handle.name)}`).catch(() => null);
+      let resolvedPath: string | null = null;
+      if (res?.ok) {
+        const data = (await res.json()) as { path?: string };
+        resolvedPath = data.path ?? null;
+      }
+      // Fall back to handle.name as display; server will resolve via cwd
+      onPick(resolvedPath ?? handle.name);
+    } catch (err) {
+      // User cancelled or API not available
+      if (err instanceof Error && err.name !== "AbortError") {
+        console.warn("showDirectoryPicker error:", err);
+      }
+    } finally {
+      setPicking(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className={className ?? "folder-picker-btn"}
+      onClick={() => void handleClick()}
+      disabled={picking || !hasFolderPicker}
+      title={hasFolderPicker ? "点击选择文件夹" : "浏览器不支持文件夹选择（需要 HTTPS 或 localhost）"}
+    >
+      {picking ? "选择中…" : (children ?? (pickedName ? `📁 ${pickedName}` : "📁 浏览文件夹…"))}
+    </button>
+  );
+}
+
 // ── Workspace Landing ──────────────────────────────────────────────────────────
 
 function WorkspaceLanding({
@@ -133,17 +191,15 @@ function WorkspaceLanding({
   availablePresets: { name: string; description: string }[];
   onSelect: (workspace: string, preset?: string) => void;
 }) {
-  const [customPath, setCustomPath] = useState("");
   const [selectedPreset, setSelectedPreset] = useState("coding");
+  const [pickedPath, setPickedPath] = useState<string | null>(null);
 
   function handleUseServer() {
     onSelect(serverWorkspace ?? "", selectedPreset);
   }
 
-  function handleCustomSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const ws = customPath.trim();
-    if (ws) onSelect(ws, selectedPreset);
+  function handleUsePicked() {
+    if (pickedPath) onSelect(pickedPath, selectedPreset);
   }
 
   return (
@@ -158,7 +214,7 @@ function WorkspaceLanding({
         {/* 推荐：直接使用当前服务器目录 */}
         {serverWorkspace && (
           <div className="landing-server-ws">
-            <div className="landing-label">当前目录</div>
+            <div className="landing-label">当前服务器目录</div>
             <div className="landing-ws-card">
               <span className="landing-ws-icon">⌂</span>
               <span className="landing-ws-path">{serverWorkspace}</span>
@@ -184,23 +240,32 @@ function WorkspaceLanding({
           </div>
         )}
 
-        {/* 或者输入自定义路径 */}
-        <div className="landing-divider"><span>或输入其他路径</span></div>
-        <form className="landing-form" onSubmit={handleCustomSubmit}>
-          <div className="landing-field">
-            <label className="landing-label">工作区路径</label>
-            <input
-              className="landing-input"
-              type="text"
-              value={customPath}
-              onChange={(e) => setCustomPath(e.target.value)}
-              placeholder="/Users/you/my-project"
-            />
-          </div>
-          <button className="landing-btn landing-btn-secondary" type="submit" disabled={!customPath.trim()}>
-            打开此路径 →
-          </button>
-        </form>
+        {/* 或者通过文件夹选择器选择其他目录 */}
+        <div className="landing-divider"><span>或选择其他目录</span></div>
+        <div className="landing-picker-area">
+          {hasFolderPicker ? (
+            <>
+              <FolderPickerButton
+                className="landing-btn landing-btn-secondary landing-folder-btn"
+                onPick={(path) => setPickedPath(path)}
+              >
+                {pickedPath ? `📁 ${pickedPath.split("/").slice(-2).join("/")}` : "📁 浏览并选择文件夹…"}
+              </FolderPickerButton>
+              {pickedPath && (
+                <div className="landing-picked-path" title={pickedPath}>
+                  <span className="landing-ws-path">{pickedPath}</span>
+                </div>
+              )}
+              {pickedPath && (
+                <button className="landing-btn" onClick={handleUsePicked} style={{ marginTop: 8 }}>
+                  使用此目录开始 →
+                </button>
+              )}
+            </>
+          ) : (
+            <p className="landing-picker-unavail">文件夹选择器需要 HTTPS 或 localhost 环境。</p>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -252,38 +317,58 @@ function Header({
 }
 
 function WorkspacePicker({ workspace, onSwitch }: { workspace: string; onSwitch?: (ws: string) => void }) {
-  const [editing, setEditing] = useState(false);
-  const [val, setVal] = useState(workspace);
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const trimmed = val.trim();
-    if (trimmed && trimmed !== workspace) onSwitch?.(trimmed);
-    setEditing(false);
-  }
+  const [open, setOpen] = useState(false);
 
   const shortPath = workspace.length > 32 ? "…" + workspace.slice(-30) : workspace;
 
-  if (editing) {
-    return (
-      <form className="workspace-picker editing" onSubmit={handleSubmit} onBlur={() => setEditing(false)}>
-        <input
-          className="workspace-input"
-          value={val}
-          onChange={(e) => setVal(e.target.value)}
-          autoFocus
-          onKeyDown={(e) => e.key === "Escape" && setEditing(false)}
-        />
-      </form>
-    );
-  }
-
   return (
-    <button className="workspace-picker" onClick={() => { setVal(workspace); setEditing(true); }} title={workspace}>
-      <span className="workspace-icon">⌂</span>
-      <span className="workspace-path">{shortPath}</span>
-      <span className="workspace-edit-icon">✎</span>
-    </button>
+    <div className="workspace-picker-wrap" style={{ position: "relative" }}>
+      <button className="workspace-picker" onClick={() => setOpen((v) => !v)} title={workspace}>
+        <span className="workspace-icon">⌂</span>
+        <span className="workspace-path">{shortPath}</span>
+        <span className="workspace-edit-icon">{open ? "▴" : "▾"}</span>
+      </button>
+      {open && (
+        <div className="workspace-picker-dropdown">
+          <div className="workspace-picker-current">
+            <span className="workspace-icon">⌂</span>
+            <span style={{ fontSize: "0.78rem", wordBreak: "break-all" }}>{workspace}</span>
+          </div>
+          {hasFolderPicker ? (
+            <FolderPickerButton
+              className="workspace-picker-browse-btn"
+              onPick={(path) => { onSwitch?.(path); setOpen(false); }}
+            >
+              📁 切换工作区…
+            </FolderPickerButton>
+          ) : (
+            <WorkspaceTextSwitch onSwitch={(ws) => { onSwitch?.(ws); setOpen(false); }} />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WorkspaceTextSwitch({ onSwitch }: { onSwitch: (ws: string) => void }) {
+  const [val, setVal] = useState("");
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = val.trim();
+    if (trimmed) onSwitch(trimmed);
+  }
+  return (
+    <form onSubmit={handleSubmit} style={{ display: "flex", gap: 4, padding: "4px 8px" }}>
+      <input
+        className="workspace-input"
+        value={val}
+        onChange={(e) => setVal(e.target.value)}
+        placeholder="/path/to/project"
+        autoFocus
+        style={{ flex: 1, fontSize: "0.78rem" }}
+      />
+      <button type="submit" className="workspace-picker-browse-btn" disabled={!val.trim()}>切换</button>
+    </form>
   );
 }
 
@@ -340,6 +425,7 @@ function SessionsPanel({
   serverWorkspace,
   availablePresets,
   onNew,
+  onSelect,
   onRefresh,
 }: {
   sessions: SessionSummary[];
@@ -347,17 +433,18 @@ function SessionsPanel({
   serverWorkspace: string | null;
   availablePresets: { name: string; description: string }[];
   onNew: (workspace: string, preset?: string) => void;
+  onSelect: (sessionId: string) => void;
   onRefresh: () => void;
 }) {
   const [creating, setCreating] = useState(false);
-  const [customPath, setCustomPath] = useState("");
+  const [pickedPath, setPickedPath] = useState<string | null>(null);
   const [selectedPreset, setSelectedPreset] = useState("coding");
 
   function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    onNew((customPath.trim() || serverWorkspace) ?? "", selectedPreset);
+    onNew((pickedPath ?? serverWorkspace) ?? "", selectedPreset);
     setCreating(false);
-    setCustomPath("");
+    setPickedPath(null);
   }
 
   return (
@@ -371,15 +458,32 @@ function SessionsPanel({
 
       {creating && (
         <form className="session-create-form" onSubmit={handleCreate}>
-          <div className="session-create-label">工作区路径（留空使用服务器目录）</div>
-          <input
-            className="session-path-input"
-            type="text"
-            value={customPath}
-            onChange={(e) => setCustomPath(e.target.value)}
-            placeholder={serverWorkspace ?? "/path/to/project"}
-            autoFocus
-          />
+          <div className="session-create-label">工作区目录</div>
+          {hasFolderPicker ? (
+            <>
+              <FolderPickerButton
+                className="session-folder-btn"
+                onPick={(path) => setPickedPath(path)}
+              >
+                {pickedPath ? `📁 ${pickedPath.split("/").slice(-2).join("/")}` : "📁 选择文件夹…"}
+              </FolderPickerButton>
+              {pickedPath && (
+                <div className="session-picked-path" title={pickedPath}>{pickedPath}</div>
+              )}
+              {!pickedPath && serverWorkspace && (
+                <div className="session-create-hint">留空则使用服务器目录：{serverWorkspace.split("/").pop()}</div>
+              )}
+            </>
+          ) : (
+            <input
+              className="session-path-input"
+              type="text"
+              value={pickedPath ?? ""}
+              onChange={(e) => setPickedPath(e.target.value || null)}
+              placeholder={serverWorkspace ?? "/path/to/project"}
+              autoFocus
+            />
+          )}
           {availablePresets.length > 0 && (
             <div className="session-preset-row">
               {availablePresets.map((p) => (
@@ -403,7 +507,15 @@ function SessionsPanel({
       ) : (
         <ul className="sessions-list">
           {sessions.map((sess) => (
-            <li key={sess.sessionId} className={`session-item${sess.sessionId === currentSessionId ? " current" : ""}`}>
+            <li
+              key={sess.sessionId}
+              className={`session-item${sess.sessionId === currentSessionId ? " current" : ""}`}
+              onClick={() => onSelect(sess.sessionId)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => e.key === "Enter" && onSelect(sess.sessionId)}
+              title={`切换到会话 ${sess.sessionId}`}
+            >
               <div className="session-item-ws" title={sess.workspace}>
                 {sess.workspace.split("/").pop() ?? sess.workspace}
               </div>
