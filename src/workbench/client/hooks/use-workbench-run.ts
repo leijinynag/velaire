@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 
 import type { RuntimeEvent } from "@/foundation/events/types";
+import type { ApprovalDecision } from "@/policy/types";
 import type { AgentUiState } from "@/ui-state";
 import { createInitialAgentUiState, reduceRuntimeEvent } from "@/ui-state";
-import type { ApprovalDecision } from "@/policy/types";
 
 export type RunLogSummary = { runId: string; path: string; updatedAt: string };
 export type SessionSummary = { sessionId: string; workspace: string; runs: string[]; status: string; createdAt: string; updatedAt: string };
@@ -28,9 +28,12 @@ export function useWorkbenchRun() {
   const [mode, setMode] = useState<"demo" | "live">("live");
   const [error, setError] = useState<string | null>(null);
   const [runs, setRuns] = useState<RunLogSummary[]>([]);
-  const [activeRailItem, setActiveRailItem] = useState<string | null>(null);
+  // Sessions 面板默认展开
+  const [activeRailItem, setActiveRailItem] = useState<string | null>("Sessions");
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [workspace, setWorkspace] = useState<string | null>(null);
+  const [serverWorkspace, setServerWorkspace] = useState<string | null>(null);
   const [availablePresets, setAvailablePresets] = useState<{ name: string; description: string }[]>([]);
   const [skills, setSkills] = useState<SkillFrontmatter[]>([]);
   const [theme, setThemeState] = useState<"dark" | "light">(() => {
@@ -44,13 +47,19 @@ export function useWorkbenchRun() {
     try { localStorage.setItem("velaire-theme", theme); } catch { /* ignore */ }
   }, [theme]);
 
-  const setTheme = useCallback((t: "dark" | "light") => setThemeState(t), []);
   const toggleTheme = useCallback(() => setThemeState((prev) => (prev === "dark" ? "light" : "dark")), []);
 
   const fetchRuns = useCallback(() => {
     void fetch("/api/runs")
       .then((r) => r.json())
       .then((data: { runs: RunLogSummary[] }) => setRuns(data.runs))
+      .catch(() => undefined);
+  }, []);
+
+  const fetchSessions = useCallback(() => {
+    void fetch("/api/sessions")
+      .then((r) => r.json())
+      .then((data: { sessions: SessionSummary[] }) => setSessions(data.sessions ?? []))
       .catch(() => undefined);
   }, []);
 
@@ -67,17 +76,26 @@ export function useWorkbenchRun() {
       .then((r) => r.json())
       .then((bootstrap: { demo?: boolean; workspace?: string; presets?: { name: string; description: string }[] }) => {
         setMode(bootstrap.demo ? "demo" : "live");
-        if (bootstrap.workspace) setWorkspace(bootstrap.workspace);
-        if (bootstrap.presets) setAvailablePresets(Array.isArray(bootstrap.presets) ? bootstrap.presets as { name: string; description: string }[] : []);
-        if (bootstrap.workspace) refreshSkills(bootstrap.workspace);
+        if (bootstrap.workspace) {
+          setServerWorkspace(bootstrap.workspace);
+          setWorkspace(bootstrap.workspace);
+          refreshSkills(bootstrap.workspace);
+        }
+        if (bootstrap.presets) {
+          setAvailablePresets(Array.isArray(bootstrap.presets) ? bootstrap.presets as { name: string; description: string }[] : []);
+        }
       })
       .catch(() => setError("Failed to load workbench bootstrap metadata."));
     fetchRuns();
-  }, [fetchRuns, refreshSkills]);
+    fetchSessions();
+  }, [fetchRuns, fetchSessions, refreshSkills]);
 
   useEffect(() => {
-    if (!state.isRunning) fetchRuns();
-  }, [state.isRunning, fetchRuns]);
+    if (!state.isRunning) {
+      fetchRuns();
+      fetchSessions();
+    }
+  }, [state.isRunning, fetchRuns, fetchSessions]);
 
   const openSessionEventSource = useCallback((sid: string) => {
     eventSourceRef.current?.close();
@@ -111,26 +129,28 @@ export function useWorkbenchRun() {
       const response = await fetch("/api/sessions", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ workspace: ws, preset }),
+        body: JSON.stringify({ workspace: ws || undefined, preset }),
       });
-      const data = (await response.json()) as { sessionId?: string; error?: string };
+      const data = (await response.json()) as { sessionId?: string; workspace?: string; error?: string };
       if (!response.ok || !data.sessionId) {
         setError(data.error ?? "Failed to create session");
         return null;
       }
       dispatch({ type: "reset" });
       setSessionId(data.sessionId);
-      setWorkspace(ws);
+      const actualWorkspace = data.workspace ?? ws;
+      setWorkspace(actualWorkspace);
       setSelectedToolUseId(null);
       setSelectedInspector("timeline");
       openSessionEventSource(data.sessionId);
-      refreshSkills(ws);
+      refreshSkills(actualWorkspace);
+      fetchSessions();
       return data.sessionId;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create session");
       return null;
     }
-  }, [openSessionEventSource, refreshSkills]);
+  }, [openSessionEventSource, refreshSkills, fetchSessions]);
 
   const switchWorkspace = useCallback(async (ws: string) => {
     dispatch({ type: "reset" });
@@ -144,7 +164,7 @@ export function useWorkbenchRun() {
   // Submit prompt to current session (accumulates, no reset)
   const submitPrompt = useCallback(async (prompt: string) => {
     if (!sessionId) {
-      setError("No active session. Please select a workspace first.");
+      setError("No active session.");
       return;
     }
     setError(null);
@@ -202,11 +222,12 @@ export function useWorkbenchRun() {
   return {
     state,
     sessionId,
+    sessions,
     workspace,
+    serverWorkspace,
     availablePresets,
     skills,
     theme,
-    setTheme,
     toggleTheme,
     createSession,
     switchWorkspace,
@@ -215,6 +236,7 @@ export function useWorkbenchRun() {
     replayRun,
     approve,
     refreshSkills,
+    fetchSessions,
     selectedToolUseId,
     setSelectedToolUseId,
     selectedInspector,

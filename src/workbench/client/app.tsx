@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 
 import type { NonSystemMessage } from "@/foundation/messages/types";
+import type { ApprovalDecision } from "@/policy/types";
 import type { AgentUiState } from "@/ui-state";
 import { deriveConversationView, deriveMetricsView } from "@/ui-state";
-import type { ApprovalDecision } from "@/policy/types";
 
-import { type RunLogSummary, type SkillFrontmatter, useWorkbenchRun } from "./hooks/use-workbench-run";
+import { type SessionSummary, type SkillFrontmatter, useWorkbenchRun } from "./hooks/use-workbench-run";
 
 // ── Top-level app ──────────────────────────────────────────────────────────────
 
@@ -14,7 +14,9 @@ export function WorkbenchApp() {
   const {
     state,
     sessionId,
+    sessions,
     workspace,
+    serverWorkspace,
     availablePresets,
     skills,
     theme,
@@ -26,6 +28,7 @@ export function WorkbenchApp() {
     replayRun,
     approve,
     refreshSkills,
+    fetchSessions,
     selectedToolUseId,
     setSelectedToolUseId,
     selectedInspector,
@@ -49,12 +52,13 @@ export function WorkbenchApp() {
 
   const handleSubmit = mode === "demo" ? runPrompt : submitPrompt;
 
-  // Show workspace landing when no session yet (live mode only)
+  // live 模式下且没有 session 时显示落地页
   if (mode === "live" && !sessionId) {
     return (
       <div className="wb-root">
         <Header state={state} mode={mode} metrics={metrics} workspace={workspace} theme={theme} onToggleTheme={toggleTheme} />
         <WorkspaceLanding
+          serverWorkspace={serverWorkspace}
           availablePresets={availablePresets}
           onSelect={(ws, preset) => void createSession(ws, preset)}
         />
@@ -75,14 +79,25 @@ export function WorkbenchApp() {
       />
       <div className="wb-layout">
         <ActivityRail activeItem={activeRailItem} onToggle={toggleRailItem} />
-        {activeRailItem === "Runs" && (
-          <RailDrawer title="Run History">
-            <RunsPanel runs={runs} currentRunId={state.runId} onReplay={replayRun} />
+        {activeRailItem === "Sessions" && (
+          <RailDrawer title="Sessions">
+            <SessionsPanel
+              sessions={sessions}
+              currentSessionId={sessionId}
+              serverWorkspace={serverWorkspace}
+              availablePresets={availablePresets}
+              onNew={(ws, preset) => void createSession(ws, preset)}
+              onRefresh={fetchSessions}
+            />
           </RailDrawer>
         )}
         {activeRailItem === "Skills" && (
           <RailDrawer title="Skills">
-            <SkillsPanel skills={skills} onRefresh={() => refreshSkills(workspace ?? undefined)} onCreateSkill={(name, desc) => void handleSubmit(`Please create a new skill file at ~/.velaire/skills/${name}/SKILL.md. The skill should be named "${name}" and its description is: ${desc}. Create the directory and SKILL.md file with proper frontmatter (name, description fields) and workflow instructions.`)} />
+            <SkillsPanel
+              skills={skills}
+              onRefresh={() => refreshSkills(workspace ?? undefined)}
+              onCreateSkill={(name, desc) => void handleSubmit(`请帮我创建一个技能文件，路径为 ~/.velaire/skills/${name}/SKILL.md，技能名称为"${name}"，描述为：${desc}。请先创建目录，再写入包含正确 frontmatter（name 和 description 字段）以及工作流说明的 SKILL.md 文件。`)}
+            />
           </RailDrawer>
         )}
         <AgentCanvas
@@ -110,24 +125,26 @@ export function WorkbenchApp() {
 // ── Workspace Landing ──────────────────────────────────────────────────────────
 
 function WorkspaceLanding({
+  serverWorkspace,
   availablePresets,
   onSelect,
 }: {
+  serverWorkspace: string | null;
   availablePresets: { name: string; description: string }[];
   onSelect: (workspace: string, preset?: string) => void;
 }) {
-  const [path, setPath] = useState("");
+  const [customPath, setCustomPath] = useState("");
   const [selectedPreset, setSelectedPreset] = useState("coding");
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const ws = path.trim() || window.location.origin;
-    onSelect(ws, selectedPreset);
+  function handleUseServer() {
+    onSelect(serverWorkspace ?? "", selectedPreset);
   }
 
-  const recentPaths = [
-    { label: "Current directory", value: "" },
-  ];
+  function handleCustomSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const ws = customPath.trim();
+    if (ws) onSelect(ws, selectedPreset);
+  }
 
   return (
     <div className="workspace-landing">
@@ -135,26 +152,19 @@ function WorkspaceLanding({
         <div className="landing-brand">
           <div className="landing-logo">V</div>
           <h1 className="landing-title">Velaire Workbench</h1>
-          <p className="landing-sub">Visual agent trace console — choose a workspace to begin</p>
+          <p className="landing-sub">选择工作区目录，开始一个新的 Agent 会话</p>
         </div>
 
-        <form className="landing-form" onSubmit={handleSubmit}>
-          <div className="landing-field">
-            <label className="landing-label">Workspace path</label>
-            <input
-              className="landing-input"
-              type="text"
-              value={path}
-              onChange={(e) => setPath(e.target.value)}
-              placeholder="/Users/you/project  (leave empty for server cwd)"
-              autoFocus
-            />
-          </div>
-
-          {availablePresets.length > 0 && (
-            <div className="landing-field">
-              <label className="landing-label">Preset</label>
-              <div className="preset-grid">
+        {/* 推荐：直接使用当前服务器目录 */}
+        {serverWorkspace && (
+          <div className="landing-server-ws">
+            <div className="landing-label">当前目录</div>
+            <div className="landing-ws-card">
+              <span className="landing-ws-icon">⌂</span>
+              <span className="landing-ws-path">{serverWorkspace}</span>
+            </div>
+            {availablePresets.length > 0 && (
+              <div className="preset-grid" style={{ marginTop: 10 }}>
                 {availablePresets.map((p) => (
                   <button
                     key={p.name}
@@ -163,30 +173,34 @@ function WorkspaceLanding({
                     onClick={() => setSelectedPreset(p.name)}
                   >
                     <span className="preset-name">{p.name}</span>
-                    <span className="preset-desc">{p.description}</span>
+                    {p.description && <span className="preset-desc">{p.description}</span>}
                   </button>
                 ))}
               </div>
-            </div>
-          )}
+            )}
+            <button className="landing-btn" onClick={handleUseServer} style={{ marginTop: 12 }}>
+              使用当前目录开始 →
+            </button>
+          </div>
+        )}
 
-          <button className="landing-btn" type="submit">
-            Open Workspace →
+        {/* 或者输入自定义路径 */}
+        <div className="landing-divider"><span>或输入其他路径</span></div>
+        <form className="landing-form" onSubmit={handleCustomSubmit}>
+          <div className="landing-field">
+            <label className="landing-label">工作区路径</label>
+            <input
+              className="landing-input"
+              type="text"
+              value={customPath}
+              onChange={(e) => setCustomPath(e.target.value)}
+              placeholder="/Users/you/my-project"
+            />
+          </div>
+          <button className="landing-btn landing-btn-secondary" type="submit" disabled={!customPath.trim()}>
+            打开此路径 →
           </button>
         </form>
-
-        <div className="landing-recent">
-          <p className="landing-recent-title">Quick select</p>
-          {recentPaths.map((r) => (
-            <button
-              key={r.value}
-              className="landing-recent-item"
-              onClick={() => onSelect(r.value, selectedPreset)}
-            >
-              {r.label}
-            </button>
-          ))}
-        </div>
       </div>
     </div>
   );
@@ -285,7 +299,7 @@ function StatusBadge({ isRunning }: { isRunning: boolean }) {
 // ── Activity Rail ──────────────────────────────────────────────────────────────
 
 const RAIL_ITEMS = [
-  { id: "Runs", icon: "⊞", label: "Runs" },
+  { id: "Sessions", icon: "⊞", label: "Sessions" },
   { id: "Files", icon: "◫", label: "Files" },
   { id: "Skills", icon: "◈", label: "Skills" },
   { id: "Settings", icon: "⌘", label: "Settings" },
@@ -320,29 +334,90 @@ function RailDrawer({ title, children }: { title: string; children: React.ReactN
   );
 }
 
-function RunsPanel({
-  runs,
-  currentRunId,
-  onReplay,
+function SessionsPanel({
+  sessions,
+  currentSessionId,
+  serverWorkspace,
+  availablePresets,
+  onNew,
+  onRefresh,
 }: {
-  runs: RunLogSummary[];
-  currentRunId: string | null;
-  onReplay: (runId: string) => void;
+  sessions: SessionSummary[];
+  currentSessionId: string | null;
+  serverWorkspace: string | null;
+  availablePresets: { name: string; description: string }[];
+  onNew: (workspace: string, preset?: string) => void;
+  onRefresh: () => void;
 }) {
-  if (runs.length === 0) {
-    return <div className="drawer-empty">No runs yet.<br />Submit a prompt to get started.</div>;
+  const [creating, setCreating] = useState(false);
+  const [customPath, setCustomPath] = useState("");
+  const [selectedPreset, setSelectedPreset] = useState("coding");
+
+  function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    onNew((customPath.trim() || serverWorkspace) ?? "", selectedPreset);
+    setCreating(false);
+    setCustomPath("");
   }
+
   return (
-    <ul className="runs-list">
-      {runs.map((run) => (
-        <li key={run.runId} className={`run-item${run.runId === currentRunId ? " current" : ""}`}>
-          <button className="run-item-btn" onClick={() => onReplay(run.runId)}>
-            <span className="run-item-id">{run.runId.slice(0, 18)}</span>
-            <span className="run-item-time">{relativeTime(run.updatedAt)}</span>
-          </button>
-        </li>
-      ))}
-    </ul>
+    <div className="sessions-panel">
+      <div className="sessions-toolbar">
+        <button className="sessions-refresh-btn" onClick={onRefresh} title="刷新">⟳</button>
+        <button className="sessions-new-btn" onClick={() => setCreating((v) => !v)}>
+          {creating ? "取消" : "+ 新建会话"}
+        </button>
+      </div>
+
+      {creating && (
+        <form className="session-create-form" onSubmit={handleCreate}>
+          <div className="session-create-label">工作区路径（留空使用服务器目录）</div>
+          <input
+            className="session-path-input"
+            type="text"
+            value={customPath}
+            onChange={(e) => setCustomPath(e.target.value)}
+            placeholder={serverWorkspace ?? "/path/to/project"}
+            autoFocus
+          />
+          {availablePresets.length > 0 && (
+            <div className="session-preset-row">
+              {availablePresets.map((p) => (
+                <button
+                  key={p.name}
+                  type="button"
+                  className={`session-preset-chip${selectedPreset === p.name ? " selected" : ""}`}
+                  onClick={() => setSelectedPreset(p.name)}
+                >
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          )}
+          <button className="session-create-btn" type="submit">创建</button>
+        </form>
+      )}
+
+      {sessions.length === 0 ? (
+        <div className="drawer-empty">暂无会话。<br />点击「新建会话」开始。</div>
+      ) : (
+        <ul className="sessions-list">
+          {sessions.map((sess) => (
+            <li key={sess.sessionId} className={`session-item${sess.sessionId === currentSessionId ? " current" : ""}`}>
+              <div className="session-item-ws" title={sess.workspace}>
+                {sess.workspace.split("/").pop() ?? sess.workspace}
+              </div>
+              <div className="session-item-meta">
+                <span className={`session-status ${sess.status}`}>{sess.status}</span>
+                <span className="session-item-runs">{sess.runs.length} runs</span>
+                <span className="session-item-time">{relativeTime(sess.updatedAt)}</span>
+              </div>
+              <div className="session-item-id">{sess.sessionId}</div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

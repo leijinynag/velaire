@@ -29,10 +29,10 @@ describe("workbench server", () => {
 
     await expect(handleWorkbenchRequest(request("/api/health"), { cwd, demo: true }).then((response) => response.json())).resolves.toEqual({ ok: true });
 
-    const bootstrap = await handleWorkbenchRequest(request("/api/bootstrap"), { cwd, demo: true }).then((response) => response.json()) as { demo: boolean; workspace: string; presets: string[] };
+    const bootstrap = await handleWorkbenchRequest(request("/api/bootstrap"), { cwd, demo: true }).then((response) => response.json()) as { demo: boolean; workspace: string; presets: { name: string }[] };
     expect(bootstrap.demo).toBe(true);
     expect(bootstrap.workspace).toBe(cwd);
-    expect(bootstrap.presets).toContain("coding");
+    expect(bootstrap.presets.some((p) => p.name === "coding")).toBe(true);
   });
 
   test("creates a demo run and streams runtime events over SSE", async () => {

@@ -74,7 +74,10 @@ export async function handleWorkbenchRequest(request: Request, context: Workbenc
   // Health & bootstrap
   if (method === "GET" && pathname === "/api/health") return json({ ok: true });
   if (method === "GET" && pathname === "/api/bootstrap") {
-    return json({ demo, workspace: cwd, presets: context.presets ?? ["coding"] });
+    const presets = (context.presets ?? ["coding"]).map((p) =>
+      typeof p === "string" ? { name: p, description: "" } : p,
+    );
+    return json({ demo, workspace: cwd, presets });
   }
 
   // Skills
@@ -128,7 +131,7 @@ async function createSession(request: Request, context: WorkbenchRequestContext 
   const { cwd, demo = false, sessionManager } = context;
   if (demo) return json({ error: "Cannot create sessions in demo mode" }, 400);
   const body = await parseJsonBody<CreateSessionBody>(request);
-  const workspace = body.workspace ?? cwd;
+  const workspace = (body.workspace && body.workspace.trim()) ? body.workspace.trim() : cwd;
   try {
     const session = await sessionManager.create(workspace);
     return json({ sessionId: session.sessionId, workspace: session.workspace });
@@ -148,11 +151,13 @@ function streamSessionEvents(sessionId: string, sessionManager: SessionManager):
   const session = sessionManager.get(sessionId);
   if (!session) return json({ error: "Session not found" }, 404);
 
+  let unsub: (() => void) | null = null;
   const stream = new ReadableStream<string>({
     start(controller) {
-      const unsub = sessionManager.subscribe(sessionId, controller);
-      // The unsubscribe runs when the client disconnects
-      void unsub;
+      unsub = sessionManager.subscribe(sessionId, controller);
+    },
+    cancel() {
+      unsub?.();
     },
   });
   return runtimeEventStreamResponse(stream);
