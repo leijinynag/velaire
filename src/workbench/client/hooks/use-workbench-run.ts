@@ -48,11 +48,11 @@ function clearSessionFromStorage() {
 // ── EventSource with auto-reconnect ──────────────────────────────────────────
 
 function makeSessionEventSource(
-  sid: string,
+  url: string,
   onEvent: (event: RuntimeEvent) => void,
   onError: (src: EventSource) => void,
 ): EventSource {
-  const source = new EventSource(`/api/sessions/${sid}/events`);
+  const source = new EventSource(url);
   source.addEventListener("runtime", (message) => {
     try { onEvent(JSON.parse((message as MessageEvent<string>).data) as RuntimeEvent); } catch { /* ignore */ }
   });
@@ -81,6 +81,8 @@ export function useWorkbenchRun() {
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
+  // tracks how many events we've already received for the current session
+  const eventIndexRef = useRef<number>(0);
 
   // Apply theme to DOM
   useEffect(() => {
@@ -98,14 +100,19 @@ export function useWorkbenchRun() {
     else if (!id) clearSessionFromStorage();
   }, []);
 
-  const openSessionEventSource = useCallback((sid: string) => {
+  const openSessionEventSource = useCallback((sid: string, fromIndex?: number) => {
     if (reconnectTimerRef.current) { clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null; }
     eventSourceRef.current?.close();
     activeSessionIdRef.current = sid;
+    const after = fromIndex ?? eventIndexRef.current;
+    const url = after > 0 ? `/api/sessions/${sid}/events?after=${after}` : `/api/sessions/${sid}/events`;
 
     const source = makeSessionEventSource(
-      sid,
-      (event) => dispatch(event),
+      url,
+      (event) => {
+        eventIndexRef.current += 1;
+        dispatch(event);
+      },
       (src) => {
         // Only schedule reconnect if this source is still the active one
         if (eventSourceRef.current !== src) return;
@@ -170,10 +177,11 @@ export function useWorkbenchRun() {
                 if (!r.ok) { clearSessionFromStorage(); return; }
                 return r.json().then((data: { sessionId?: string; workspace?: string; events?: RuntimeEvent[] }) => {
                   if (!data.sessionId) { clearSessionFromStorage(); return; }
+                  eventIndexRef.current = 0;
                   setSessionIdState(stored.sessionId);
                   activeSessionIdRef.current = stored.sessionId;
                   setWorkspace(stored.workspace);
-                  openSessionEventSource(stored.sessionId);
+                  openSessionEventSource(stored.sessionId, 0);
                 });
               })
               .catch(() => clearSessionFromStorage());
@@ -225,12 +233,13 @@ export function useWorkbenchRun() {
         return null;
       }
       dispatch({ type: "reset" });
+      eventIndexRef.current = 0;
       const actualWorkspace = data.workspace ?? ws;
       setSessionId(data.sessionId, actualWorkspace);
       setWorkspace(actualWorkspace);
       setSelectedToolUseId(null);
       setSelectedInspector("timeline");
-      openSessionEventSource(data.sessionId);
+      openSessionEventSource(data.sessionId, 0);
       refreshSkills(actualWorkspace);
       fetchSessions();
       return data.sessionId;
@@ -248,13 +257,14 @@ export function useWorkbenchRun() {
       if (!response.ok) { setError("Session not found"); return; }
       const data = (await response.json()) as { sessionId: string; workspace: string };
       dispatch({ type: "reset" });
+      eventIndexRef.current = 0;
       setSelectedToolUseId(null);
       setSelectedInspector("timeline");
       setSessionId(data.sessionId, data.workspace);
       setWorkspace(data.workspace);
       refreshSkills(data.workspace);
       // openSessionEventSource will replay all historical events from server
-      openSessionEventSource(data.sessionId);
+      openSessionEventSource(data.sessionId, 0);
       fetchSessions();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to switch session");

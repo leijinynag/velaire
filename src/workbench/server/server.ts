@@ -117,7 +117,10 @@ export async function handleWorkbenchRequest(request: Request, context: Workbenc
     }
 
     const sessEventsMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/events$/);
-    if (method === "GET" && sessEventsMatch?.[1]) return streamSessionEvents(sessEventsMatch[1], sessionManager);
+    if (method === "GET" && sessEventsMatch?.[1]) {
+      const after = parseInt(url.searchParams.get("after") ?? "0", 10);
+      return streamSessionEvents(sessEventsMatch[1], sessionManager, isNaN(after) ? 0 : after);
+    }
 
     const sessRunsMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/runs$/);
     if (method === "POST" && sessRunsMatch?.[1]) return createSessionRun(request, sessRunsMatch[1], context);
@@ -165,14 +168,14 @@ function getSession(sessionId: string, sessionManager: SessionManager): Response
   return json({ sessionId: sid, workspace, runs, status, createdAt, updatedAt });
 }
 
-function streamSessionEvents(sessionId: string, sessionManager: SessionManager): Response {
+function streamSessionEvents(sessionId: string, sessionManager: SessionManager, afterIndex: number): Response {
   const session = sessionManager.get(sessionId);
   if (!session) return json({ error: "Session not found" }, 404);
 
   let unsub: (() => void) | null = null;
   const stream = new ReadableStream<string>({
     start(controller) {
-      unsub = sessionManager.subscribe(sessionId, controller);
+      unsub = sessionManager.subscribe(sessionId, controller, afterIndex);
     },
     cancel() {
       unsub?.();

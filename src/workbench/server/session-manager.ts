@@ -110,15 +110,13 @@ export class SessionManager {
     }
   }
 
-  subscribe(sessionId: string, controller: ReadableStreamDefaultController<string>): (() => void) {
+  subscribe(sessionId: string, controller: ReadableStreamDefaultController<string>, afterIndex = 0): (() => void) {
     const session = this.sessions.get(sessionId);
     if (!session) return () => undefined;
-    // replay historical events
-    for (const event of session.events) {
+    // replay only events the client hasn't seen yet
+    const toReplay = afterIndex > 0 ? session.events.slice(afterIndex) : session.events;
+    for (const event of toReplay) {
       controller.enqueue(encodeRuntimeEvent(event));
-    }
-    if (session.status === "idle") {
-      // nothing more to stream right now; keep open for future runs
     }
     session.subscribers.add(controller);
     return () => session.subscribers.delete(controller);
