@@ -62,8 +62,9 @@ async function createRun(request: Request, context: WorkbenchRequestContext): Pr
   const { cwd, demo = false, runAgent } = context;
   const body = await parseJsonBody<CreateRunBody>(request);
   const input = body.prompt?.trim() || "Show the Velaire workbench demo";
-  const runId = demo || !runAgent ? createDemoRunId() : `run_${Date.now().toString(36)}`;
-  const events = demo || !runAgent ? createDemoEvents(runId, input) : runAgent(input);
+  if (!demo && !runAgent) return json({ error: "Workbench live mode requires a configured runtime." }, 400);
+  const runId = demo ? createDemoRunId() : `run_${Date.now().toString(36)}`;
+  const events = demo ? createDemoEvents(runId, input) : runAgent!(input);
   startRun(cwd, runId, events);
   return json({ runId });
 }

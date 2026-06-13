@@ -7,7 +7,7 @@ import { deriveConversationView, deriveMetricsView } from "@/ui-state";
 import { useWorkbenchRun } from "./hooks/use-workbench-run";
 
 export function WorkbenchApp() {
-  const { state, runPrompt, selectedToolUseId, setSelectedToolUseId, selectedInspector, setSelectedInspector } = useWorkbenchRun();
+  const { state, runPrompt, selectedToolUseId, setSelectedToolUseId, selectedInspector, setSelectedInspector, mode, error } = useWorkbenchRun();
   const conversation = deriveConversationView(state);
   const metrics = deriveMetricsView(state);
   const selectedTool = selectedToolUseId ? state.tools[selectedToolUseId] : null;
@@ -20,6 +20,7 @@ export function WorkbenchApp() {
           <span className="brand-mark">V</span>
           <strong>Velaire Workbench</strong>
           <span className="workspace-subtitle">Visual agent trace console</span>
+          <span className={`mode-badge ${mode}`}>{mode === "demo" ? "Demo Trace" : "Live Runtime"}</span>
         </div>
         <div className="workspace-meta">
           <span>{state.isRunning ? "Running" : "Ready"}</span>
@@ -42,6 +43,7 @@ export function WorkbenchApp() {
 
         <section className="agent-canvas">
           <AgentLanes agents={state.agents} />
+          {error ? <div className="run-error">{error}</div> : null}
           <ConversationWorkspace messages={conversation.messages} tools={state.tools} onSelectTool={setSelectedToolUseId} />
           <Composer onSubmit={runPrompt} disabled={state.isRunning} />
         </section>

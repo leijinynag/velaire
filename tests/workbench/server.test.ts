@@ -58,6 +58,19 @@ describe("workbench server", () => {
     expect(body).toContain("agent.run.completed");
   });
 
+  test("rejects live runs when no runtime adapter is configured", async () => {
+    const cwd = await makeTempDir();
+
+    const response = await handleWorkbenchRequest(request("/api/runs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "real please" }),
+    }), { cwd, demo: false });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ error: "Workbench live mode requires a configured runtime." });
+  });
+
   test("returns a real run id before the agent stream finishes", async () => {
     const cwd = await makeTempDir();
     let release!: () => void;

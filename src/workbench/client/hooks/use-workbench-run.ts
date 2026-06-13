@@ -1,4 +1,4 @@
-import { useCallback, useRef, useReducer, useState } from "react";
+import { useCallback, useEffect, useRef, useReducer, useState } from "react";
 
 import type { RuntimeEvent } from "@/foundation/events/types";
 import { createInitialAgentUiState, reduceRuntimeEvent } from "@/ui-state";
@@ -7,18 +7,33 @@ export function useWorkbenchRun() {
   const [state, dispatch] = useReducer(reduceRuntimeEvent, undefined, createInitialAgentUiState);
   const [selectedToolUseId, setSelectedToolUseId] = useState<string | null>(null);
   const [selectedInspector, setSelectedInspector] = useState("timeline");
+  const [mode, setMode] = useState<"demo" | "live">("live");
+  const [error, setError] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+
+  useEffect(() => {
+    void fetch("/api/bootstrap")
+      .then((response) => response.json())
+      .then((bootstrap: { demo?: boolean }) => setMode(bootstrap.demo ? "demo" : "live"))
+      .catch(() => setError("Failed to load workbench bootstrap metadata."));
+  }, []);
 
   const applyEvent = useCallback((event: RuntimeEvent) => {
     dispatch(event);
   }, []);
 
   const runPrompt = useCallback(async (prompt: string) => {
-    const created = (await fetch("/api/runs", {
+    setError(null);
+    const response = await fetch("/api/runs", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ prompt }),
-    }).then((response) => response.json())) as { runId: string };
+    });
+    const created = (await response.json()) as { runId?: string; error?: string };
+    if (!response.ok || !created.runId) {
+      setError(created.error ?? "Failed to start run.");
+      return;
+    }
 
     eventSourceRef.current?.close();
     const source = new EventSource(`/api/runs/${created.runId}/events`);
@@ -32,5 +47,5 @@ export function useWorkbenchRun() {
     };
   }, [applyEvent]);
 
-  return { state, runPrompt, selectedToolUseId, setSelectedToolUseId, selectedInspector, setSelectedInspector };
+  return { state, runPrompt, selectedToolUseId, setSelectedToolUseId, selectedInspector, setSelectedInspector, mode, error };
 }
