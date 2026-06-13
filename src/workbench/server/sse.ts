@@ -12,3 +12,12 @@ export function runtimeEventsResponse(events: RuntimeEvent[]): Response {
     },
   });
 }
+
+export function runtimeEventStreamResponse(stream: ReadableStream<string>): Response {
+  return new Response(stream.pipeThrough(new TextEncoderStream()), {
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "text/event-stream; charset=utf-8",
+    },
+  });
+}

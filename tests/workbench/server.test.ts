@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
+import type { RuntimeEvent } from "@/foundation/events/types";
 import { handleWorkbenchRequest } from "@/workbench/server/server";
 
 let tempDir: string | null = null;
@@ -54,6 +55,34 @@ describe("workbench server", () => {
     expect(body).toContain("tool.requested");
     expect(body).toContain("policy.decision");
     expect(body).toContain("fileChanges");
+    expect(body).toContain("agent.run.completed");
+  });
+
+  test("returns a real run id before the agent stream finishes", async () => {
+    const cwd = await makeTempDir();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    async function* runAgent(): AsyncIterable<RuntimeEvent> {
+      yield { type: "agent.run.started", runId: "runtime_run", input: "slow" };
+      await gate;
+      yield { type: "agent.run.completed", runId: "runtime_run" };
+    }
+
+    const started = Date.now();
+    const created = await handleWorkbenchRequest(request("/api/runs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "slow" }),
+    }), { cwd, runAgent }).then((response) => response.json()) as { runId: string };
+
+    expect(Date.now() - started).toBeLessThan(100);
+    release();
+
+    const eventsResponse = await handleWorkbenchRequest(request(`/api/runs/${created.runId}/events`), { cwd, runAgent });
+    const body = await eventsResponse.text();
+    expect(body).toContain("agent.run.started");
     expect(body).toContain("agent.run.completed");
   });
 });

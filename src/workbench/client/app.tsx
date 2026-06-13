@@ -32,7 +32,12 @@ export function WorkbenchApp() {
 
       <section className="workbench-grid">
         <aside className="activity-rail" aria-label="Workbench navigation">
-          {['Runs', 'Files', 'Skills', 'Settings'].map((item) => <button key={item}>{item}</button>)}
+          {[
+            ['Runs', 'R'],
+            ['Files', 'F'],
+            ['Skills', 'S'],
+            ['Settings', '⌘'],
+          ].map(([item, icon]) => <button key={item} title={item}><span>{icon}</span><small>{item}</small></button>)}
         </aside>
 
         <section className="agent-canvas">
@@ -89,8 +94,15 @@ function Composer({ onSubmit, disabled }: { onSubmit: (prompt: string) => Promis
 function TimelinePanel({ state, onSelectTool }: { state: AgentUiState; onSelectTool: (id: string) => void }) {
   return <div className="panel-body"><h2>Timeline</h2>{state.events.length === 0 ? <p>No runtime events yet.</p> : state.events.map((event, index) => {
     const toolUseId = "toolUseId" in event ? event.toolUseId : null;
-    return <button className="timeline-item" key={`${event.type}:${index}`} onClick={() => toolUseId ? onSelectTool(toolUseId) : undefined}><span>{event.type}</span><small>{"step" in event ? `step ${event.step}` : "run"}{"agentId" in event && event.agentId ? ` · ${event.agentName ?? event.agentId}` : ""}</small></button>;
+    return <button className={`timeline-item ${timelineKind(event.type)}`} key={`${event.type}:${index}`} onClick={() => toolUseId ? onSelectTool(toolUseId) : undefined}><span>{event.type}</span><small>{"step" in event ? `step ${event.step}` : "run"}{"agentId" in event && event.agentId ? ` · ${event.agentName ?? event.agentId}` : ""}</small></button>;
   })}</div>;
+}
+
+function timelineKind(type: string): string {
+  if (type.startsWith("tool.")) return "tool-event";
+  if (type.startsWith("policy") || type.startsWith("approval")) return "policy-event";
+  if (type.startsWith("model")) return "model-event";
+  return "agent-event";
 }
 
 function ToolInspector({ tool }: { tool: AgentUiState["tools"][string] | null | undefined }) {
