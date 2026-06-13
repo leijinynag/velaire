@@ -51,6 +51,9 @@ describe("workbench server", () => {
 
     expect(body).toContain("event: runtime");
     expect(body).toContain("agent.run.started");
+    expect(body).toContain("tool.requested");
+    expect(body).toContain("policy.decision");
+    expect(body).toContain("fileChanges");
     expect(body).toContain("agent.run.completed");
   });
 });

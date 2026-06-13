@@ -19,11 +19,13 @@ export function createInitialAgentUiState(): AgentUiState {
     error: null,
     agents: {},
     fileChanges: [],
+    events: [],
+    policyDecisions: {},
   };
 }
 
 export function reduceRuntimeEvent(state: AgentUiState, event: RuntimeEvent): AgentUiState {
-  const baseState = trackAgentLane(state, event);
+  const baseState = trackAgentLane({ ...state, events: [...state.events, event] }, event);
   switch (event.type) {
     case "agent.run.started":
       return {
@@ -61,12 +63,18 @@ export function reduceRuntimeEvent(state: AgentUiState, event: RuntimeEvent): Ag
         ...baseState,
         tools: {
           ...baseState.tools,
-          [event.toolUseId]: { id: event.toolUseId, name: event.toolName, status: "started", agentId: event.agentId },
+          [event.toolUseId]: { id: event.toolUseId, name: event.toolName, status: "started", agentId: event.agentId, input: event.input, capabilities: event.capabilities, risk: event.risk },
         },
       };
 
     case "policy.decision":
-      return baseState;
+      return {
+        ...baseState,
+        policyDecisions: {
+          ...baseState.policyDecisions,
+          [event.toolUseId]: { toolUseId: event.toolUseId, decision: event.decision, reason: event.reason, agentId: event.agentId },
+        },
+      };
 
     case "approval.requested":
       return {
@@ -95,7 +103,7 @@ export function reduceRuntimeEvent(state: AgentUiState, event: RuntimeEvent): Ag
         ...baseState,
         tools: {
           ...baseState.tools,
-          [event.toolUseId]: { id: event.toolUseId, name: event.toolName, status: "started", agentId: event.agentId },
+          [event.toolUseId]: { ...baseState.tools[event.toolUseId], id: event.toolUseId, name: event.toolName, status: "started", agentId: event.agentId ?? baseState.tools[event.toolUseId]?.agentId },
         },
       };
 
@@ -120,7 +128,11 @@ export function reduceRuntimeEvent(state: AgentUiState, event: RuntimeEvent): Ag
             name: event.toolName,
             status: event.result.ok ? "completed" : "failed",
             summary: event.result.summary,
-            agentId: event.agentId,
+            agentId: event.agentId ?? baseState.tools[event.toolUseId]?.agentId,
+            input: baseState.tools[event.toolUseId]?.input,
+            capabilities: baseState.tools[event.toolUseId]?.capabilities,
+            risk: baseState.tools[event.toolUseId]?.risk,
+            durationMs: event.durationMs,
           },
         },
         messages: [...baseState.messages, toolMessage],

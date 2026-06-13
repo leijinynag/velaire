@@ -11,6 +11,7 @@ export function WorkbenchApp() {
   const conversation = deriveConversationView(state);
   const metrics = deriveMetricsView(state);
   const selectedTool = selectedToolUseId ? state.tools[selectedToolUseId] : null;
+  const selectedPolicy = selectedToolUseId ? state.policyDecisions[selectedToolUseId] : null;
 
   return (
     <main className="workbench-shell">
@@ -18,10 +19,13 @@ export function WorkbenchApp() {
         <div>
           <span className="brand-mark">V</span>
           <strong>Velaire Workbench</strong>
+          <span className="workspace-subtitle">Visual agent trace console</span>
         </div>
         <div className="workspace-meta">
           <span>{state.isRunning ? "Running" : "Ready"}</span>
+          <span>{state.runId ?? "no run"}</span>
           <span>{metrics.sessionTotalTokens} tokens</span>
+          <span>{metrics.toolCount} tools</span>
           <span>{metrics.agentCount || 1} agent lane</span>
         </div>
       </header>
@@ -34,7 +38,6 @@ export function WorkbenchApp() {
         <section className="agent-canvas">
           <AgentLanes agents={state.agents} />
           <ConversationWorkspace messages={conversation.messages} tools={state.tools} onSelectTool={setSelectedToolUseId} />
-          <CommandPaletteHint />
           <Composer onSubmit={runPrompt} disabled={state.isRunning} />
         </section>
 
@@ -47,7 +50,7 @@ export function WorkbenchApp() {
           {selectedInspector === "timeline" ? <TimelinePanel state={state} onSelectTool={setSelectedToolUseId} /> : null}
           {selectedInspector === "tool" ? <ToolInspector tool={selectedTool} /> : null}
           {selectedInspector === "diff" ? <DiffViewer changes={state.fileChanges} /> : null}
-          {selectedInspector === "policy" ? <PolicyInspector /> : null}
+          {selectedInspector === "policy" ? <PolicyInspector decisions={state.policyDecisions} selected={selectedPolicy} /> : null}
           {selectedInspector === "transcript" ? <TranscriptViewer messages={state.messages} /> : null}
           {selectedInspector === "metrics" ? <MetricsPanel metrics={metrics} /> : null}
         </aside>
@@ -58,19 +61,19 @@ export function WorkbenchApp() {
 
 function AgentLanes({ agents }: { agents: AgentUiState["agents"] }) {
   const lanes = Object.values(agents);
-  return <div className="agent-lanes">{(lanes.length ? lanes : [{ id: "default", name: "Default Agent", status: "idle", step: null, eventCount: 0 }]).map((agent) => <div className="agent-lane" key={agent.id}><span>{agent.name}</span><small>{agent.status}</small></div>)}</div>;
+  return <div className="agent-lanes">{(lanes.length ? lanes : [{ id: "default", name: "Default Agent", status: "idle", step: null, eventCount: 0 }]).map((agent) => <div className="agent-lane" key={agent.id}><span>{agent.name}</span><small>{agent.status} · step {agent.step ?? 0} · {agent.eventCount} events</small></div>)}</div>;
 }
 
-function ConversationWorkspace({ messages, tools, onSelectTool }: { messages: NonSystemMessage[]; tools: Record<string, { name: string; status: string; summary?: string }>; onSelectTool: (id: string) => void }) {
+function ConversationWorkspace({ messages, tools, onSelectTool }: { messages: NonSystemMessage[]; tools: AgentUiState["tools"]; onSelectTool: (id: string) => void }) {
   return (
     <div className="conversation-workspace">
-      {messages.length === 0 ? <div className="empty-state"><h1>Visualize the agent run, not just the answer.</h1><p>Start with demo mode to inspect streaming output, timeline events, tool cards, and future agent lanes.</p></div> : null}
+      {messages.length === 0 ? <div className="empty-state"><div className="empty-kicker">Agent DevTools</div><h1>Visualize the run, not just the answer.</h1><p>Run a prompt to inspect model deltas, policy decisions, approvals, tool results, metrics, and code diffs in one workspace.</p><div className="empty-grid"><span>Timeline replay</span><span>Tool inspector</span><span>Policy trace</span><span>Code diff</span></div></div> : null}
       {messages.map((message, index) => <MessageCard key={index} message={message} tools={tools} onSelectTool={onSelectTool} />)}
     </div>
   );
 }
 
-function MessageCard({ message, tools, onSelectTool }: { message: NonSystemMessage; tools: Record<string, { name: string; status: string; summary?: string }>; onSelectTool: (id: string) => void }) {
+function MessageCard({ message, tools, onSelectTool }: { message: NonSystemMessage; tools: AgentUiState["tools"]; onSelectTool: (id: string) => void }) {
   return <article className={`message-card ${message.role}`}><div className="message-role">{message.role}</div>{message.content.map((part, index) => {
     if (part.type === "text") return <ReactMarkdown key={index}>{part.text}</ReactMarkdown>;
     if (part.type === "tool_use") return <button className="tool-card" key={part.id} onClick={() => onSelectTool(part.id)}><strong>{part.name}</strong><span>{tools[part.id]?.status ?? "requested"}</span><code>{JSON.stringify(part.input, null, 2)}</code></button>;
@@ -84,16 +87,19 @@ function Composer({ onSubmit, disabled }: { onSubmit: (prompt: string) => Promis
 }
 
 function TimelinePanel({ state, onSelectTool }: { state: AgentUiState; onSelectTool: (id: string) => void }) {
-  const toolRuns = Object.values(state.tools);
-  return <div className="panel-body"><h2>Timeline</h2><div className="timeline-item">Run {state.runId ?? "not started"}</div>{toolRuns.map((tool) => <button className="timeline-item" key={tool.id} onClick={() => onSelectTool(tool.id)}>{tool.name} · {tool.status}</button>)}</div>;
+  return <div className="panel-body"><h2>Timeline</h2>{state.events.length === 0 ? <p>No runtime events yet.</p> : state.events.map((event, index) => {
+    const toolUseId = "toolUseId" in event ? event.toolUseId : null;
+    return <button className="timeline-item" key={`${event.type}:${index}`} onClick={() => toolUseId ? onSelectTool(toolUseId) : undefined}><span>{event.type}</span><small>{"step" in event ? `step ${event.step}` : "run"}{"agentId" in event && event.agentId ? ` · ${event.agentName ?? event.agentId}` : ""}</small></button>;
+  })}</div>;
 }
 
-function ToolInspector({ tool }: { tool: { id: string; name: string; status: string; summary?: string } | null | undefined }) {
-  return <div className="panel-body"><h2>Tool Inspector</h2>{tool ? <pre>{JSON.stringify(tool, null, 2)}</pre> : <p>Select a tool call from the timeline or conversation.</p>}</div>;
+function ToolInspector({ tool }: { tool: AgentUiState["tools"][string] | null | undefined }) {
+  return <div className="panel-body"><h2>Tool Inspector</h2>{tool ? <div className="inspector-stack"><div className="inspector-summary"><strong>{tool.name}</strong><span>{tool.status}</span>{"durationMs" in tool && tool.durationMs ? <span>{tool.durationMs}ms</span> : null}</div><pre>{JSON.stringify(tool, null, 2)}</pre></div> : <p>Select a tool call from the timeline or conversation.</p>}</div>;
 }
 
-function PolicyInspector() {
-  return <div className="panel-body"><h2>Policy</h2><p>Policy decisions will appear here as runtime events include approval context.</p></div>;
+function PolicyInspector({ decisions, selected }: { decisions: AgentUiState["policyDecisions"]; selected: AgentUiState["policyDecisions"][string] | null | undefined }) {
+  const all = Object.values(decisions);
+  return <div className="panel-body"><h2>Policy</h2>{selected ? <article className="policy-card"><strong>{selected.decision}</strong><p>{selected.reason}</p><small>{selected.toolUseId}</small></article> : null}{all.length === 0 ? <p>No policy decisions yet.</p> : all.map((decision) => <article className="policy-card" key={decision.toolUseId}><strong>{decision.decision}</strong><p>{decision.reason}</p><small>{decision.toolUseId}</small></article>)}</div>;
 }
 
 function TranscriptViewer({ messages }: { messages: NonSystemMessage[] }) {
@@ -111,8 +117,4 @@ function DiffViewer({ changes }: { changes: AgentUiState["fileChanges"] }) {
 function renderFallbackDiff(before?: string, after?: string): string {
   if (before === undefined && after === undefined) return "No textual diff available.";
   return [`Before:\n${before ?? ""}`, `After:\n${after ?? ""}`].join("\n\n");
-}
-
-function CommandPaletteHint() {
-  return <div className="command-palette-hint"><kbd>⌘K</kbd><span>Command palette hooks are reserved for run, layout, inspector, and skill actions.</span></div>;
 }

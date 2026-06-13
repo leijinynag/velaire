@@ -54,4 +54,16 @@ describe("shared agent UI reducer", () => {
 
     expect(state.fileChanges).toEqual([{ path: "/workspace/a.ts", kind: "created", after: "export {};", toolUseId: "toolu_1" }]);
   });
+
+  test("keeps raw events, policy decisions, and tool metadata for inspectors", () => {
+    const state = reduceAll([
+      { type: "tool.requested", runId, step: 1, toolUseId: "toolu_1", toolName: "write_file", input: { path: "/workspace/a.ts" }, capabilities: ["workspace.write"], risk: { level: "medium", reversible: true, description: "writes file" } },
+      { type: "policy.decision", runId, step: 1, toolUseId: "toolu_1", decision: "ask", reason: "Tool has side effects or elevated risk" },
+      { type: "tool.completed", runId, step: 1, toolUseId: "toolu_1", toolName: "write_file", durationMs: 12, result: { ok: true, summary: "wrote", modelContent: "done" } },
+    ]);
+
+    expect(state.events.map((event) => event.type)).toEqual(["tool.requested", "policy.decision", "tool.completed"]);
+    expect(state.policyDecisions.toolu_1).toMatchObject({ decision: "ask", reason: "Tool has side effects or elevated risk" });
+    expect(state.tools.toolu_1).toMatchObject({ input: { path: "/workspace/a.ts" }, capabilities: ["workspace.write"], durationMs: 12 });
+  });
 });
