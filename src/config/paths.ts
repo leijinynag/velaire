@@ -33,7 +33,7 @@ export function getProjectLocalSettingsPath(cwd: string): string {
 export function ensureVelaireHomeDirectory(): void {
   mkdirSync(getVelaireHomePath(), { recursive: true });
 }
-
+//判断是否初始化完成
 export function isVelaireSetupComplete(): boolean {
   const home = getVelaireHomePath();
   const configPath = getConfigFilePath();

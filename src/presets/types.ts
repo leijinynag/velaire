@@ -13,7 +13,7 @@ export interface AgentPreset {
   createTools(): ToolRegistry;
   createMiddleware?(): AgentMiddleware[];
 }
-
+//一个preset就是一个Agent的配置
 export interface AsyncAgentPreset {
   name: string;
   description: string;

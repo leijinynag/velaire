@@ -6,7 +6,7 @@ import type { ToolRegistry } from "@/tools/registry";
 import type { ToolExecutionResult } from "@/tools/types";
 
 import type { AgentMiddleware } from "./middleware";
-
+// 定义审批持久化接口，用于加载和持久化工具调用的审批决策。
 export interface ApprovalPersistence {
   loadAllowList(cwd: string): Promise<Set<string>>;
   persistAllowedTool(cwd: string, toolName: string): Promise<void>;
@@ -30,7 +30,7 @@ export interface AgentRuntimeOptions {
   modelName?: string;
   maxSteps?: number;
 }
-
+// 定义工具调用执行请求接口，包含运行时上下文和工具调用信息。
 export interface ToolCallExecutionRequest {
   runId: string;
   step: number;

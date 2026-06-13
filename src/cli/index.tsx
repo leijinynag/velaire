@@ -21,6 +21,7 @@ import type { ModelProvider } from "@/providers/types";
 import { AgentRuntime } from "@/runtime/agent-runtime";
 import { createWorkbenchServer } from "@/workbench/server";
 
+//todo: add more presets
 const presets = new Map<string, AsyncAgentPreset>([
   [researchLitePreset.name, researchLitePreset],
   [codingPreset.name, codingPreset],
@@ -43,7 +44,7 @@ export type ResolvedRunConfiguration = {
   modelEntry?: ModelEntry;
   policyProfile: PolicyProfile;
 };
-
+// command树
 export function createProgram(): Command {
   const program = new Command();
   program
@@ -161,10 +162,11 @@ export async function createRuntimeFromConfig(
   options: Pick<RunCommandOptions, "provider" | "preset" | "modelName">,
   runtimeOptions: { approvalManager?: Pick<ApprovalManager, "requestApproval"> } = {},
 ): Promise<AgentRuntime> {
+  // 解析运行配置，根据 options 和 config。
   const resolved = resolveRunConfiguration(options, config);
   const provider = createProvider(resolved.providerName, resolved.modelEntry);
   const preset = getPreset(resolved.presetName);
-  const cwd = process.cwd();
+  const cwd = process.cwd(); // 获取当前工作目录，即命令执行时所在的目录
   const runtime = new AgentRuntime({
     provider,
     systemPrompt: await preset.createSystemPrompt({ cwd }),
@@ -182,7 +184,7 @@ export async function createRuntimeFromConfig(
   }
   return runtime;
 }
-
+// 解析 model entry，根据 modelName 或默认配置。
 function resolveModelEntry(modelName: string | undefined, config: VelaireConfig): ModelEntry {
   const name = modelName ?? config.defaultModel;
   const entry = config.models.find((model) => model.name === name);
