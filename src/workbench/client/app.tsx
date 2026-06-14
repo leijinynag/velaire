@@ -133,10 +133,12 @@ const hasFolderPicker = typeof window !== "undefined" && "showDirectoryPicker" i
 
 function FolderPickerButton({
   onPick,
+  onResolveFailed,
   className,
   children,
 }: {
   onPick: (path: string) => void;
+  onResolveFailed?: (folderName: string, message: string) => void;
   className?: string;
   children?: React.ReactNode;
 }) {
@@ -154,11 +156,18 @@ function FolderPickerButton({
       const res = await fetch(`/api/resolve-path?name=${encodeURIComponent(handle.name)}`).catch(() => null);
       let resolvedPath: string | null = null;
       if (res?.ok) {
-        const data = (await res.json()) as { path?: string };
+        const data = (await res.json()) as { path?: string; error?: string };
         resolvedPath = data.path ?? null;
+        if (!resolvedPath) {
+          onResolveFailed?.(handle.name, data.error ?? "无法从服务器工作目录解析此文件夹，请输入绝对路径。");
+          return;
+        }
       }
-      // Fall back to handle.name as display; server will resolve via cwd
-      onPick(resolvedPath ?? handle.name);
+      if (!resolvedPath) {
+        onResolveFailed?.(handle.name, "浏览器只提供了文件夹名称，请输入该目录的绝对路径。");
+        return;
+      }
+      onPick(resolvedPath);
     } catch (err) {
       // User cancelled or API not available
       if (err instanceof Error && err.name !== "AbortError") {
@@ -195,13 +204,16 @@ function WorkspaceLanding({
 }) {
   const [selectedPreset, setSelectedPreset] = useState("coding");
   const [pickedPath, setPickedPath] = useState<string | null>(null);
+  const [manualPath, setManualPath] = useState("");
+  const [pickerNotice, setPickerNotice] = useState<string | null>(null);
 
   function handleUseServer() {
     onSelect(serverWorkspace ?? "", selectedPreset);
   }
 
   function handleUsePicked() {
-    if (pickedPath) onSelect(pickedPath, selectedPreset);
+    const target = (pickedPath ?? manualPath).trim();
+    if (target) onSelect(target, selectedPreset);
   }
 
   return (
@@ -249,24 +261,41 @@ function WorkspaceLanding({
             <>
               <FolderPickerButton
                 className="landing-btn landing-btn-secondary landing-folder-btn"
-                onPick={(path) => setPickedPath(path)}
+                onPick={(path) => { setPickedPath(path); setManualPath(path); setPickerNotice(null); }}
+                onResolveFailed={(name, message) => {
+                  setPickedPath(null);
+                  setPickerNotice(`${name}: ${message}`);
+                }}
               >
-                {pickedPath ? `📁 ${pickedPath.split("/").slice(-2).join("/")}` : "📁 浏览并选择文件夹…"}
+                {pickedPath ? `选择了 ${pickedPath.split("/").slice(-2).join("/")}` : "浏览并尝试定位文件夹"}
               </FolderPickerButton>
+              {pickerNotice && <div className="workspace-path-notice">{pickerNotice}</div>}
               {pickedPath && (
                 <div className="landing-picked-path" title={pickedPath}>
                   <span className="landing-ws-path">{pickedPath}</span>
                 </div>
               )}
-              {pickedPath && (
-                <button className="landing-btn" onClick={handleUsePicked} style={{ marginTop: 8 }}>
-                  使用此目录开始 →
-                </button>
-              )}
             </>
           ) : (
             <p className="landing-picker-unavail">文件夹选择器需要 HTTPS 或 localhost 环境。</p>
           )}
+          <form
+            className="workspace-path-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              handleUsePicked();
+            }}
+          >
+            <input
+              className="workspace-path-input"
+              value={manualPath}
+              onChange={(event) => { setManualPath(event.target.value); setPickedPath(null); }}
+              placeholder="/Users/you/project"
+            />
+            <button className="workspace-path-submit" type="submit" disabled={!(pickedPath ?? manualPath).trim()}>
+              开始
+            </button>
+          </form>
         </div>
       </div>
     </div>
@@ -320,6 +349,7 @@ function Header({
 
 function WorkspacePicker({ workspace, onSwitch }: { workspace: string; onSwitch?: (ws: string) => void }) {
   const [open, setOpen] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const shortPath = workspace.length > 32 ? "…" + workspace.slice(-30) : workspace;
 
@@ -336,16 +366,19 @@ function WorkspacePicker({ workspace, onSwitch }: { workspace: string; onSwitch?
             <span className="workspace-icon">⌂</span>
             <span style={{ fontSize: "0.78rem", wordBreak: "break-all" }}>{workspace}</span>
           </div>
-          {hasFolderPicker ? (
-            <FolderPickerButton
-              className="workspace-picker-browse-btn"
-              onPick={(path) => { onSwitch?.(path); setOpen(false); }}
-            >
-              📁 切换工作区…
-            </FolderPickerButton>
-          ) : (
-            <WorkspaceTextSwitch onSwitch={(ws) => { onSwitch?.(ws); setOpen(false); }} />
+          {hasFolderPicker && (
+            <>
+              <FolderPickerButton
+                className="workspace-picker-browse-btn"
+                onPick={(path) => { onSwitch?.(path); setNotice(null); setOpen(false); }}
+                onResolveFailed={(name) => setNotice(`${name} 只能读取到文件夹名，请输入绝对路径。`)}
+              >
+                浏览定位…
+              </FolderPickerButton>
+              {notice && <div className="workspace-path-notice compact">{notice}</div>}
+            </>
           )}
+          <WorkspaceTextSwitch onSwitch={(ws) => { onSwitch?.(ws); setOpen(false); }} />
         </div>
       )}
     </div>
@@ -360,14 +393,13 @@ function WorkspaceTextSwitch({ onSwitch }: { onSwitch: (ws: string) => void }) {
     if (trimmed) onSwitch(trimmed);
   }
   return (
-    <form onSubmit={handleSubmit} style={{ display: "flex", gap: 4, padding: "4px 8px" }}>
+    <form onSubmit={handleSubmit} className="workspace-switch-form">
       <input
         className="workspace-input"
         value={val}
         onChange={(e) => setVal(e.target.value)}
         placeholder="/path/to/project"
         autoFocus
-        style={{ flex: 1, fontSize: "0.78rem" }}
       />
       <button type="submit" className="workspace-picker-browse-btn" disabled={!val.trim()}>切换</button>
     </form>
@@ -977,28 +1009,27 @@ function Composer({ onSubmit, onStop, disabled }: { onSubmit: (prompt: string) =
     }
   }
   return (
-    <form className="composer" onSubmit={handleSubmit}>
-      <textarea
-        ref={ref}
-        name="prompt"
-        className="composer-input"
-        placeholder={disabled ? "Agent is running…" : "Ask Velaire…  ⌘↵ to send"}
-        disabled={disabled}
-        onKeyDown={handleKeyDown}
-        rows={3}
-      />
-      <div className="composer-toolbar">
-        <small className="composer-hint">Shift+Enter for new line · ⌘↵ to send</small>
-        {disabled ? (
-          <button className="composer-btn stop" type="button" onClick={() => void onStop()}>
-            Stop
-          </button>
-        ) : (
-          <button className="composer-btn" type="submit">
-            Run →
-          </button>
-        )}
+    <form className={`composer${disabled ? " running" : ""}`} onSubmit={handleSubmit}>
+      <div className="composer-field">
+        <textarea
+          ref={ref}
+          name="prompt"
+          className="composer-input"
+          placeholder={disabled ? "Agent is running" : "Ask Velaire to inspect, edit, or explain this workspace"}
+          disabled={disabled}
+          onKeyDown={handleKeyDown}
+          rows={1}
+        />
       </div>
+      {disabled ? (
+        <button className="composer-btn stop" type="button" onClick={() => void onStop()}>
+          Stop
+        </button>
+      ) : (
+        <button className="composer-btn" type="submit" title="Run prompt">
+          Run
+        </button>
+      )}
     </form>
   );
 }

@@ -22,5 +22,6 @@
     "paths": {
       "@/*": ["./src/*"]
     }
-  }
+  },
+  "exclude": ["dist", "node_modules", "user-home"]
 }

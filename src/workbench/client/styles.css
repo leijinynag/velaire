@@ -208,6 +208,26 @@ a { color: inherit; }
 }
 .workspace-picker-browse-btn:hover:not(:disabled) { border-color: var(--accent-green); color: var(--accent-green); }
 .workspace-picker-browse-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.workspace-switch-form {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px 8px;
+}
+.workspace-switch-form .workspace-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.78rem;
+}
+.workspace-path-notice {
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--accent-gold) 24%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent-gold) 7%, transparent);
+  color: color-mix(in srgb, var(--accent-gold) 72%, var(--text-primary));
+  font-size: 11px;
+  line-height: 1.45;
+}
+.workspace-path-notice.compact { margin: 0 8px; }
 
 /* Folder picker button (general) */
 .folder-picker-btn {
@@ -436,6 +456,35 @@ a { color: inherit; }
   align-items: flex-start;
 }
 .trace-row:last-child { border-bottom: none; }
+.trace-row.user {
+  justify-content: flex-end;
+  border-bottom-color: transparent;
+}
+.trace-row.user .role-icon {
+  order: 2;
+}
+.trace-row.user .trace-body {
+  flex: 0 1 min(620px, 78%);
+  align-items: flex-end;
+}
+.trace-row.user .trace-role-label {
+  display: none;
+}
+.trace-row.user .trace-text {
+  max-width: 100%;
+  padding: 8px 11px;
+  border: 1px solid color-mix(in srgb, var(--role-user) 22%, transparent);
+  border-radius: 5px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--role-user) 10%, var(--bg-elevated)), color-mix(in srgb, var(--role-user) 5%, var(--bg-surface)));
+  color: var(--text-primary);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .12);
+}
+.trace-row.user .trace-text p {
+  margin-bottom: .45em;
+}
+.trace-row.assistant .trace-body {
+  max-width: min(760px, 92%);
+}
 
 .role-icon {
   width: 24px; height: 24px;
@@ -596,40 +645,56 @@ a { color: inherit; }
 
 /* ── Composer ───────────────────────────────────────────────────────────── */
 .composer {
-  border-top: 1px solid var(--border);
-  background: var(--bg-surface);
+  margin: 10px 14px 14px;
+  border: 1px solid color-mix(in srgb, var(--border-hi) 72%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--bg-surface) 84%, var(--bg-base));
   display: flex;
-  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
   flex-shrink: 0;
+  padding: 8px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .18);
+  transition: border-color .16s, box-shadow .16s, background .16s;
+}
+.composer:focus-within {
+  border-color: color-mix(in srgb, var(--accent-green) 42%, var(--border-hi));
+  box-shadow: 0 18px 46px rgba(0, 0, 0, .22), 0 0 0 1px color-mix(in srgb, var(--accent-green) 18%, transparent);
+}
+.composer.running {
+  border-color: color-mix(in srgb, var(--accent-gold) 24%, var(--border));
+}
+.composer-field {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
 }
 .composer-input {
   width: 100%;
-  padding: 10px 14px 6px;
+  min-height: 34px;
+  max-height: 120px;
+  padding: 7px 8px;
   background: transparent;
-  resize: none;
+  resize: vertical;
   border: none;
-  border-bottom: 1px solid var(--border);
   color: var(--text-primary);
-  line-height: 1.5;
+  line-height: 1.45;
   font-size: 13px;
+  display: block;
 }
 .composer-input::placeholder { color: var(--text-muted); }
-.composer-input:focus { outline: none; border-bottom-color: color-mix(in srgb, var(--accent-green) 50%, transparent); }
+.composer-input:focus { outline: none; }
 .composer-input:disabled { opacity: .6; }
-.composer-toolbar {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 6px 10px;
-}
-.composer-hint { font-size: 10px; color: var(--text-muted); }
 .composer-btn {
-  padding: 6px 16px;
+  min-width: 64px;
+  padding: 7px 15px;
   background: var(--accent-green);
   color: #0a1a0d;
-  border-radius: var(--radius);
+  border-radius: 5px;
   font-size: 12px; font-weight: 700;
-  cursor: pointer; transition: all .12s;
+  cursor: pointer; transition: transform .12s, background .12s, color .12s, border-color .12s;
 }
-.composer-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-green) 85%, white); }
+.composer-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-green) 85%, white); transform: translateY(-1px); }
 .composer-btn:disabled { opacity: .5; cursor: not-allowed; background: var(--text-muted); color: var(--bg-base); }
 .composer-btn.stop {
   background: color-mix(in srgb, var(--accent-red) 14%, transparent);
@@ -839,6 +904,37 @@ a { color: inherit; }
 .landing-folder-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .landing-picked-path { padding: 6px 10px; background: var(--bg-base); border: 1px solid var(--border); border-radius: var(--radius); }
 .landing-picker-unavail { font-size: 12px; color: var(--text-muted); font-style: italic; }
+.workspace-path-form {
+  display: flex;
+  gap: 8px;
+}
+.workspace-path-input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.workspace-path-input:focus {
+  border-color: color-mix(in srgb, var(--accent-green) 45%, var(--border-hi));
+}
+.workspace-path-submit {
+  padding: 0 14px;
+  border-radius: var(--radius);
+  background: var(--accent-green);
+  color: #0a1a0d;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.workspace-path-submit:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
 .landing-recent { display: flex; flex-direction: column; gap: 6px; }
 .landing-recent-title { font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
 .landing-recent-item {

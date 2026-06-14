@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -175,5 +175,54 @@ describe("workbench server", () => {
     expect(approvalDecisions).toEqual(["deny"]);
     const activeSession = sessionManager.get(session.sessionId);
     expect(activeSession?.events.map((event) => event.type)).toEqual(["agent.run.started", "agent.error"]);
+  });
+
+  test("creates sessions only from resolved workspace directories", async () => {
+    const cwd = await makeTempDir();
+    const childWorkspace = join(cwd, "child-project");
+    await mkdir(childWorkspace);
+    const createdWorkspaces: string[] = [];
+    const sessionManager = new SessionManager(async (workspace) => {
+      createdWorkspaces.push(workspace);
+      return { async *run() { /* no-op */ } } as never;
+    });
+
+    const absolute = await handleWorkbenchRequest(request("/api/sessions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workspace: childWorkspace }),
+    }), { cwd, sessionManager }).then((response) => response.json()) as { workspace: string };
+
+    expect(absolute.workspace).toBe(childWorkspace);
+
+    const relative = await handleWorkbenchRequest(request("/api/sessions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workspace: "child-project" }),
+    }), { cwd, sessionManager }).then((response) => response.json()) as { workspace: string };
+
+    expect(relative.workspace).toBe(childWorkspace);
+    expect(createdWorkspaces).toEqual([childWorkspace, childWorkspace]);
+  });
+
+  test("rejects unresolved relative workspace names instead of creating nested folders", async () => {
+    const cwd = await makeTempDir();
+    const createdWorkspaces: string[] = [];
+    const sessionManager = new SessionManager(async (workspace) => {
+      createdWorkspaces.push(workspace);
+      return { async *run() { /* no-op */ } } as never;
+    });
+
+    const response = await handleWorkbenchRequest(request("/api/sessions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workspace: "picked-folder-name-only" }),
+    }), { cwd, sessionManager });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: expect.stringContaining("absolute path"),
+    });
+    expect(createdWorkspaces).toEqual([]);
   });
 });

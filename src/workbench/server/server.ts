@@ -90,18 +90,8 @@ export async function handleWorkbenchRequest(request: Request, context: Workbenc
   if (method === "GET" && pathname === "/api/resolve-path") {
     const name = url.searchParams.get("name");
     if (!name) return json({ error: "name is required" }, 400);
-    // Check if it's already absolute
-    if (name.startsWith("/")) return json({ path: name });
-    // Try to find the folder relative to server cwd
-    const { resolve, join: pathJoin } = await import("node:path");
-    const candidate = pathJoin(cwd, name);
-    try {
-      const { stat } = await import("node:fs/promises");
-      const s = await stat(candidate);
-      if (s.isDirectory()) return json({ path: resolve(candidate) });
-    } catch { /* not found */ }
-    // Return null — client will use the name as-is
-    return json({ path: null });
+    const resolved = await resolveWorkspacePath(name, cwd);
+    return json(resolved.ok ? { path: resolved.path } : { path: null, error: resolved.error });
   }
 
   // Session API (only available when sessionManager provided)
@@ -155,12 +145,44 @@ async function createSession(request: Request, context: WorkbenchRequestContext 
   const { cwd, demo = false, sessionManager } = context;
   if (demo) return json({ error: "Cannot create sessions in demo mode" }, 400);
   const body = await parseJsonBody<CreateSessionBody>(request);
-  const workspace = (body.workspace && body.workspace.trim()) ? body.workspace.trim() : cwd;
+  const rawWorkspace = (body.workspace && body.workspace.trim()) ? body.workspace.trim() : cwd;
+  const resolvedWorkspace = await resolveWorkspacePath(rawWorkspace, cwd);
+  if (!resolvedWorkspace.ok) return json({ error: resolvedWorkspace.error }, 400);
   try {
-    const session = await sessionManager.create(workspace);
+    const session = await sessionManager.create(resolvedWorkspace.path);
     return json({ sessionId: session.sessionId, workspace: session.workspace });
   } catch (err) {
     return json({ error: err instanceof Error ? err.message : "Failed to create session" }, 500);
+  }
+}
+
+type WorkspacePathResult =
+  | { ok: true; path: string }
+  | { ok: false; error: string };
+
+async function resolveWorkspacePath(input: string, cwd: string): Promise<WorkspacePathResult> {
+  const trimmed = input.trim();
+  if (!trimmed) return { ok: true, path: cwd };
+
+  const { stat } = await import("node:fs/promises");
+  const { homedir } = await import("node:os");
+  const path = await import("node:path");
+
+  const expanded = trimmed === "~" ? homedir() : trimmed.startsWith("~/") ? path.join(homedir(), trimmed.slice(2)) : trimmed;
+  const candidate = path.isAbsolute(expanded) ? expanded : path.resolve(cwd, expanded);
+
+  try {
+    const s = await stat(candidate);
+    if (!s.isDirectory()) return { ok: false, error: `Workspace path is not a directory: ${candidate}` };
+    return { ok: true, path: path.resolve(candidate) };
+  } catch {
+    if (path.isAbsolute(expanded)) {
+      return { ok: false, error: `Workspace directory does not exist: ${candidate}` };
+    }
+    return {
+      ok: false,
+      error: `Cannot resolve "${trimmed}" from the workbench server directory. Enter an absolute path or start with --workspace /path/to/project.`,
+    };
   }
 }
 
