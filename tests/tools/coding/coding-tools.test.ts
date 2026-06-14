@@ -10,6 +10,8 @@ import { ensureWithinDirectory, isWithinDirectory } from "@/tools/workspace/util
 
 let workspace: string;
 
+type BashResultData = { exitCode: number | null; stdout: string; stderr: string; truncated: boolean };
+
 beforeEach(async () => {
   workspace = await mkdtemp(join(tmpdir(), "velaire-coding-tools-"));
 });
@@ -157,7 +159,7 @@ describe("workspace tools", () => {
 describe("shell tool", () => {
   test("bash separates stdout and stderr, keeps exitCode, honors cwd, and truncates output", async () => {
     const result = await execute("bash", {
-      command: "pwd; printf 'err' >&2; printf 'abcdef'",
+      command: "pwd; printf 'err' >&2; printf '%160s' '' | tr ' ' x",
       cwd: workspace,
       maxChars: 90,
     });
@@ -166,8 +168,12 @@ describe("shell tool", () => {
       ok: true,
       data: { exitCode: 0, stderr: "err", truncated: true },
     });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("Expected bash command to succeed");
+    const data = result.data as BashResultData;
+    expect(data.stdout).toContain("/");
+    expect(data.stdout).toContain("[truncated");
     expect(result.modelContent).toContain("stdout:");
-    expect(result.modelContent).toContain("/private/var/");
     expect(result.modelContent.length).toBeLessThan(300);
   });
 
@@ -182,6 +188,15 @@ describe("shell tool", () => {
     const promise = execute("bash", { command: "sleep 5" }, { signal: controller.signal });
     controller.abort();
     await expect(promise).resolves.toMatchObject({ ok: false, error: { code: "COMMAND_ABORTED" } });
+  });
+
+  test("bash executes commands with bash instead of zsh", async () => {
+    const result = await execute("bash", { command: "test -n \"$BASH_VERSION\" && printf '%s' \"$BASH_VERSION\"" });
+    expect(result).toMatchObject({ ok: true });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("Expected bash command to succeed");
+    const data = result.data as BashResultData;
+    expect(data.stdout).not.toBe("");
   });
 });
 

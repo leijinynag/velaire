@@ -22,7 +22,7 @@ async function readPipe(stream: ReadableStream<Uint8Array> | null): Promise<stri
 
 export const bashTool: ToolDefinition<z.infer<typeof schema>, { exitCode: number | null; stdout: string; stderr: string; truncated: boolean }> = {
   name: "bash",
-  description: "Execute a shell command in zsh with cwd, timeout, AbortSignal, separated stdout/stderr, and truncated output. Include a short description explaining why the command is needed.",
+  description: "Execute a shell command in bash with cwd, timeout, AbortSignal, separated stdout/stderr, and truncated output. Include a short description explaining why the command is needed.",
   schema,
   capabilities: ["shell.execute"],
   risk: { level: "high", reversible: false, description: "Runs arbitrary shell commands that may modify the system." },
@@ -39,7 +39,7 @@ export const bashTool: ToolDefinition<z.infer<typeof schema>, { exitCode: number
 
     try {
       // shell 执行统一在这里绑定 cwd、超时、中断和输出截断。
-      const proc = Bun.spawn({ cmd: ["zsh", "-c", command], cwd: workingDirectory, stdout: "pipe", stderr: "pipe" });
+      const proc = Bun.spawn({ cmd: ["bash", "-lc", command], cwd: workingDirectory, stdout: "pipe", stderr: "pipe" });
       const kill = () => {
         aborted = true;
         proc.kill();
