@@ -15,6 +15,7 @@ export interface WorkbenchSession {
   subscribers: Set<ReadableStreamDefaultController<string>>;
   runs: string[];
   status: "idle" | "running";
+  currentRunId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -52,6 +53,7 @@ export class SessionManager {
       subscribers: new Set(),
       runs: [],
       status: "idle",
+      currentRunId: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -82,6 +84,7 @@ export class SessionManager {
     const runId = `run_${Date.now().toString(36)}`;
     session.runs.push(runId);
     session.status = "running";
+    session.currentRunId = runId;
     session.updatedAt = new Date().toISOString();
 
     void this.runAsync(session, runId, prompt);
@@ -91,6 +94,7 @@ export class SessionManager {
   private async runAsync(session: WorkbenchSession, runId: string, prompt: string): Promise<void> {
     try {
       for await (const event of session.runtime.run(prompt)) {
+        if (session.currentRunId !== runId) break;
         session.events.push(event);
         session.updatedAt = new Date().toISOString();
         const frame = encodeRuntimeEvent(event);
@@ -99,10 +103,28 @@ export class SessionManager {
         }
         void appendRunEvent(session.workspace, runId, event).catch(() => undefined);
       }
-    } catch {
-      // runtime errors are surfaced as agent.error events via the runtime itself
+    } catch (error) {
+      if (session.currentRunId === runId) {
+        const event: RuntimeEvent = {
+          type: "agent.error",
+          runId,
+          error: {
+            code: error instanceof DOMException && error.name === "AbortError" ? "RUN_ABORTED" : "RUNTIME_ERROR",
+            message: error instanceof Error ? error.message : String(error),
+          },
+        };
+        session.events.push(event);
+        const frame = encodeRuntimeEvent(event);
+        for (const sub of session.subscribers) {
+          try { sub.enqueue(frame); } catch { /* closed */ }
+        }
+        void appendRunEvent(session.workspace, runId, event).catch(() => undefined);
+      }
     } finally {
-      session.status = "idle";
+      if (session.currentRunId === runId) {
+        session.status = "idle";
+        session.currentRunId = null;
+      }
       session.updatedAt = new Date().toISOString();
       for (const sub of session.subscribers) {
         try { sub.enqueue(`event: run_complete\ndata: ${JSON.stringify({ runId })}\n\n`); } catch { /* closed */ }
@@ -126,6 +148,38 @@ export class SessionManager {
     const session = this.sessions.get(sessionId);
     if (!session) return false;
     return session.approvalManager.respondTo(toolUseId, decision);
+  }
+
+  stopRun(sessionId: string): boolean {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.status !== "running") return false;
+    const runId = session.currentRunId;
+    session.runtime.abort();
+    session.approvalManager.denyAllPending();
+    if (runId) {
+      const event: RuntimeEvent = {
+        type: "agent.error",
+        runId,
+        error: { code: "RUN_ABORTED", message: "Run stopped by user." },
+      };
+      session.events.push(event);
+      const frame = encodeRuntimeEvent(event);
+      for (const sub of session.subscribers) {
+        try { sub.enqueue(frame); } catch { /* closed */ }
+      }
+      void appendRunEvent(session.workspace, runId, event).catch(() => undefined);
+    }
+    session.status = "idle";
+    session.currentRunId = null;
+    session.updatedAt = new Date().toISOString();
+    for (const sub of session.subscribers) {
+      try {
+        sub.enqueue(`event: run_complete\ndata: ${JSON.stringify({ stopped: true })}\n\n`);
+      } catch {
+        // subscriber already closed
+      }
+    }
+    return true;
   }
 
   destroy(sessionId: string): void {

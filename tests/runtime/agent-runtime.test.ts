@@ -178,6 +178,49 @@ describe("agent runtime", () => {
     expect(runtime.messages.filter((message) => message.role === "tool")).toHaveLength(2);
   });
 
+  test("emits approval request before waiting for approval decision", async () => {
+    let approve!: () => void;
+    const approvalGate = new Promise<void>((resolve) => {
+      approve = resolve;
+    });
+    const registry = new ToolRegistry();
+    registry.register({ ...echoTool, capabilities: ["workspace.write"] });
+    const runtime = new AgentRuntime({
+      provider: new MockModelProvider({
+        eventBatches: [
+          [{ type: "message_start" }, { type: "tool_use", id: "toolu_1", name: "echo", input: { value: "hello" } }, { type: "message_stop" }],
+          [{ type: "message_start" }, { type: "text_delta", text: "done" }, { type: "message_stop" }],
+        ],
+      }),
+      systemPrompt: "You are Velaire.",
+      tools: registry,
+      askUser: async () => {
+        await approvalGate;
+        return "allow_once";
+      },
+    });
+
+    const iterator = runtime.run("use a write tool")[Symbol.asyncIterator]();
+    const seen: string[] = [];
+    for (let i = 0; i < 10; i++) {
+      const next = await iterator.next();
+      expect(next.done).toBe(false);
+      if (!next.done) seen.push(next.value.type);
+      if (next.value?.type === "approval.requested") break;
+    }
+
+    expect(seen).toContain("approval.requested");
+    expect(seen).not.toContain("approval.resolved");
+
+    approve();
+    const remaining: string[] = [];
+    for await (const event of { [Symbol.asyncIterator]: () => iterator }) {
+      remaining.push(event.type);
+    }
+    expect(remaining).toContain("approval.resolved");
+    expect(remaining).toContain("tool.completed");
+  });
+
   test("executes tool calls and continues model loop", async () => {
     const registry = new ToolRegistry();
     registry.register(echoTool);

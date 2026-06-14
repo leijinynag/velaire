@@ -5,7 +5,9 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import type { RuntimeEvent } from "@/foundation/events/types";
+import type { ApprovalDecision } from "@/policy/types";
 import { handleWorkbenchRequest } from "@/workbench/server/server";
+import { SessionManager } from "@/workbench/server/session-manager";
 
 let tempDir: string | null = null;
 
@@ -97,5 +99,81 @@ describe("workbench server", () => {
     const body = await eventsResponse.text();
     expect(body).toContain("agent.run.started");
     expect(body).toContain("agent.run.completed");
+  });
+
+  test("stops a running session through the session API", async () => {
+    const cwd = await makeTempDir();
+    let aborted = false;
+    const sessionManager = new SessionManager(async () => ({
+      abort() {
+        aborted = true;
+      },
+      async *run(prompt: string) {
+        yield { type: "agent.run.started", runId: "runtime_run", input: prompt };
+        await new Promise(() => undefined);
+      },
+    } as never));
+
+    const session = await handleWorkbenchRequest(request("/api/sessions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workspace: cwd }),
+    }), { cwd, sessionManager }).then((response) => response.json()) as { sessionId: string };
+
+    const run = await handleWorkbenchRequest(request(`/api/sessions/${session.sessionId}/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "stop me" }),
+    }), { cwd, sessionManager }).then((response) => response.json()) as { runId: string };
+
+    expect(run.runId).toStartWith("run_");
+
+    const stopped = await handleWorkbenchRequest(request(`/api/sessions/${session.sessionId}/runs/current`, {
+      method: "DELETE",
+    }), { cwd, sessionManager });
+
+    expect(stopped.status).toBe(200);
+    expect(aborted).toBe(true);
+
+    const summary = await handleWorkbenchRequest(request(`/api/sessions/${session.sessionId}`), { cwd, sessionManager }).then((response) => response.json()) as { status: string };
+    expect(summary.status).toBe("idle");
+  });
+
+  test("stopping a session releases pending approvals without replaying stale run events", async () => {
+    const cwd = await makeTempDir();
+    const approvalDecisions: ApprovalDecision[] = [];
+    const sessionManager = new SessionManager(async (_workspace, approvalManager) => ({
+      abort() {},
+      async *run(prompt: string) {
+        yield { type: "agent.run.started", runId: "runtime_run", input: prompt };
+        approvalDecisions.push(await approvalManager.requestApproval({ toolUseId: "toolu_write", toolName: "write_file", input: { path: "a.ts" } }));
+        yield { type: "agent.run.completed", runId: "runtime_run" };
+      },
+    } as never));
+
+    const session = await handleWorkbenchRequest(request("/api/sessions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workspace: cwd }),
+    }), { cwd, sessionManager }).then((response) => response.json()) as { sessionId: string };
+
+    await handleWorkbenchRequest(request(`/api/sessions/${session.sessionId}/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "needs approval" }),
+    }), { cwd, sessionManager });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const stopped = await handleWorkbenchRequest(request(`/api/sessions/${session.sessionId}/runs/current`, {
+      method: "DELETE",
+    }), { cwd, sessionManager });
+    expect(stopped.status).toBe(200);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(approvalDecisions).toEqual(["deny"]);
+    const activeSession = sessionManager.get(session.sessionId);
+    expect(activeSession?.events.map((event) => event.type)).toEqual(["agent.run.started", "agent.error"]);
   });
 });

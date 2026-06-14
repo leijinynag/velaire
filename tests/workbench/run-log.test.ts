@@ -41,4 +41,19 @@ describe("workbench run log", () => {
 
     expect(logs.map((log) => log.runId)).toEqual(["run_new", "run_old"]);
   });
+
+  test("preserves append order when callers do not await each write", async () => {
+    const root = await makeTempDir();
+    const events: RuntimeEvent[] = [
+      { type: "agent.run.started", runId: "run_1", input: "hello" },
+      { type: "agent.step.started", runId: "run_1", step: 1 },
+      { type: "tool.requested", runId: "run_1", step: 1, toolUseId: "toolu_1", toolName: "bash", input: {} },
+      { type: "tool.started", runId: "run_1", step: 1, toolUseId: "toolu_1", toolName: "bash" },
+      { type: "tool.completed", runId: "run_1", step: 1, toolUseId: "toolu_1", toolName: "bash", result: { ok: true, summary: "ok", modelContent: "ok" } },
+    ];
+
+    await Promise.all(events.map((event) => appendRunEvent(root, "run_1", event)));
+
+    expect((await readRunEvents(root, "run_1")).map((event) => event.type)).toEqual(events.map((event) => event.type));
+  });
 });

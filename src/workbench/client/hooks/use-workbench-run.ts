@@ -195,7 +195,6 @@ export function useWorkbenchRun() {
       .catch(() => setError("Failed to load workbench bootstrap metadata."));
     fetchRuns();
     fetchSessions();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -301,6 +300,19 @@ export function useWorkbenchRun() {
     }
   }, [sessionId, openSessionEventSource]);
 
+  const stopRun = useCallback(async () => {
+    if (!sessionId) return;
+    setError(null);
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}/runs/current`, { method: "DELETE" });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) setError(data.error ?? "Failed to stop run");
+      fetchSessions();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to stop run");
+    }
+  }, [fetchSessions, sessionId]);
+
   const runPrompt = useCallback(async (prompt: string) => {
     setError(null);
     dispatch({ type: "reset" });
@@ -354,6 +366,7 @@ export function useWorkbenchRun() {
     switchSession,
     switchWorkspace,
     submitPrompt,
+    stopRun,
     runPrompt,
     replayRun,
     approve,

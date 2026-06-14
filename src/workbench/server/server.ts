@@ -13,7 +13,7 @@ export interface CreateWorkbenchServerOptions {
   demo?: boolean;
   createRuntime?: CreateRuntimeFn;
   /** @deprecated use createRuntime */
-  runAgent?: (prompt: string) => AsyncIterable<RuntimeEvent>;
+  runAgent?: (prompt: string) => AsyncIterable<RuntimeEvent> | Iterable<RuntimeEvent>;
 }
 
 export interface WorkbenchRequestContext {
@@ -22,7 +22,7 @@ export interface WorkbenchRequestContext {
   sessionManager?: SessionManager;
   presets?: string[];
   /** @deprecated legacy demo path */
-  runAgent?: (prompt: string) => AsyncIterable<RuntimeEvent>;
+  runAgent?: (prompt: string) => AsyncIterable<RuntimeEvent> | Iterable<RuntimeEvent>;
 }
 
 interface CreateSessionBody {
@@ -125,6 +125,9 @@ export async function handleWorkbenchRequest(request: Request, context: Workbenc
     const sessRunsMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/runs$/);
     if (method === "POST" && sessRunsMatch?.[1]) return createSessionRun(request, sessRunsMatch[1], context);
 
+    const stopRunMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/runs\/current$/);
+    if (method === "DELETE" && stopRunMatch?.[1]) return stopSessionRun(stopRunMatch[1], sessionManager);
+
     const approvalMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/approvals\/([^/]+)$/);
     if (method === "POST" && approvalMatch?.[1] && approvalMatch?.[2]) {
       return handleApproval(request, approvalMatch[1], approvalMatch[2], sessionManager);
@@ -204,6 +207,12 @@ async function handleApproval(request: Request, sessionId: string, toolUseId: st
   if (!body.decision) return json({ error: "decision is required" }, 400);
   const ok = sessionManager.approve(sessionId, toolUseId, body.decision);
   if (!ok) return json({ error: "No pending approval matching that toolUseId" }, 404);
+  return json({ ok: true });
+}
+
+function stopSessionRun(sessionId: string, sessionManager: SessionManager): Response {
+  const ok = sessionManager.stopRun(sessionId);
+  if (!ok) return json({ error: "No running session found" }, 404);
   return json({ ok: true });
 }
 

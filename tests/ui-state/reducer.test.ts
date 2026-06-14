@@ -66,4 +66,38 @@ describe("shared agent UI reducer", () => {
     expect(state.policyDecisions.toolu_1).toMatchObject({ decision: "ask", reason: "Tool has side effects or elevated risk" });
     expect(state.tools.toolu_1).toMatchObject({ input: { path: "/workspace/a.ts" }, capabilities: ["workspace.write"], durationMs: 12 });
   });
+
+  test("does not duplicate assistant tool calls when final message completes", () => {
+    const state = reduceAll([
+      { type: "agent.run.started", runId, input: "use tool" },
+      { type: "model.delta", runId, step: 1, delta: { type: "tool_use_delta", toolUseId: "toolu_1", toolName: "bash", inputJsonDelta: JSON.stringify({ command: "ls" }) } },
+      { type: "model.message.completed", runId, step: 1, message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_1", name: "bash", input: { command: "ls" } }] } },
+    ]);
+
+    const toolUseCount = state.messages.filter((message) =>
+      message.role === "assistant" && message.content.some((part) => part.type === "tool_use" && part.id === "toolu_1"),
+    ).length;
+    expect(toolUseCount).toBe(1);
+  });
+
+  test("tracks multiple pending approvals and clears them independently", () => {
+    const requested = reduceAll([
+      { type: "approval.requested", runId, step: 1, toolUseId: "toolu_1", toolName: "bash", input: { command: "ls" }, prompt: "Allow bash?" },
+      { type: "approval.requested", runId, step: 1, toolUseId: "toolu_2", toolName: "bash", input: { command: "pwd" }, prompt: "Allow bash?" },
+    ]);
+
+    expect(Object.keys(requested.pendingApprovals)).toEqual(["toolu_1", "toolu_2"]);
+    expect(requested.pendingApproval?.toolUseId).toBe("toolu_1");
+
+    const resolved = reduceRuntimeEvent(requested, {
+      type: "approval.resolved",
+      runId,
+      step: 1,
+      toolUseId: "toolu_1",
+      approved: true,
+    });
+
+    expect(Object.keys(resolved.pendingApprovals)).toEqual(["toolu_2"]);
+    expect(resolved.pendingApproval?.toolUseId).toBe("toolu_2");
+  });
 });

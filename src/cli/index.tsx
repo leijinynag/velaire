@@ -20,8 +20,8 @@ import { MockModelProvider } from "@/providers/mock/provider";
 import { ProviderRegistry } from "@/providers/registry";
 import type { ModelProvider } from "@/providers/types";
 import { AgentRuntime } from "@/runtime/agent-runtime";
-import { SessionManager } from "@/workbench/server/session-manager";
 import { createWorkbenchServer } from "@/workbench/server";
+import { createDemoEvents, createDemoRunId } from "@/workbench/server/demo-events";
 
 export const presetRegistry = new PresetRegistry();
 presetRegistry.register(researchLitePreset);
@@ -94,10 +94,6 @@ async function startWorkbench(options: { port: string; provider?: string; worksp
 
   const config = loadConfig();
 
-  const sessionManager = new SessionManager(async (workspace, approvalManager) => {
-    return createRuntimeFromConfig(config, { provider: options.provider }, { approvalManager, cwd: workspace });
-  });
-
   const server = createWorkbenchServer({
     cwd: defaultWorkspace,
     port: Number.isFinite(port) ? port : 4321,
@@ -106,7 +102,6 @@ async function startWorkbench(options: { port: string; provider?: string; worksp
       return createRuntimeFromConfig(config, { provider: options.provider }, { approvalManager, cwd: workspace });
     },
     ...(demo ? { runAgent: (prompt) => {
-      const { createDemoEvents, createDemoRunId } = require("@/workbench/server/demo-events");
       const runId = createDemoRunId();
       return createDemoEvents(runId, prompt);
     } } : {}),
@@ -207,4 +202,3 @@ function resolveModelEntry(modelName: string | undefined, config: VelaireConfig)
   }
   return entry;
 }
-

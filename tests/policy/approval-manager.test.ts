@@ -24,4 +24,21 @@ describe("approval manager", () => {
 
     await expect(manager.requestApproval({ toolUseId: "toolu_1", toolName: "bash", input: {} })).resolves.toBe("deny");
   });
+
+  test("denies current and queued approvals when clearing pending requests", async () => {
+    const manager = new ApprovalManager();
+    const seen: Array<string | null> = [];
+    manager.subscribe((request) => {
+      seen.push(request?.toolUseId ?? null);
+    });
+
+    const first = manager.requestApproval({ toolUseId: "toolu_1", toolName: "bash", input: {} });
+    const second = manager.requestApproval({ toolUseId: "toolu_2", toolName: "write_file", input: {} });
+
+    expect(manager.denyAllPending()).toBe(2);
+    await expect(first).resolves.toBe("deny");
+    await expect(second).resolves.toBe("deny");
+    expect(manager.currentRequest).toBeUndefined();
+    expect(seen).toEqual([null, "toolu_1", null]);
+  });
 });

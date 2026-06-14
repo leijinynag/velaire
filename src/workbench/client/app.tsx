@@ -25,6 +25,7 @@ export function WorkbenchApp() {
     switchSession,
     switchWorkspace,
     submitPrompt,
+    stopRun,
     runPrompt,
     replayRun,
     approve,
@@ -107,6 +108,7 @@ export function WorkbenchApp() {
           conversation={conversation}
           error={error}
           onSubmit={handleSubmit}
+          onStop={stopRun}
           onSelectTool={setSelectedToolUseId}
           onApprove={approve}
         />
@@ -620,6 +622,7 @@ function AgentCanvas({
   conversation,
   error,
   onSubmit,
+  onStop,
   onSelectTool,
   onApprove,
 }: {
@@ -627,6 +630,7 @@ function AgentCanvas({
   conversation: ReturnType<typeof deriveConversationView>;
   error: string | null;
   onSubmit: (prompt: string) => Promise<void>;
+  onStop: () => Promise<void>;
   onSelectTool: (id: string) => void;
   onApprove: (toolUseId: string, decision: ApprovalDecision) => Promise<void>;
 }) {
@@ -638,12 +642,12 @@ function AgentCanvas({
         messages={conversation.messages}
         tools={state.tools}
         fileChanges={state.fileChanges}
-        pendingApproval={state.pendingApproval}
+        pendingApprovals={state.pendingApprovals}
         isRunning={state.isRunning}
         onSelectTool={onSelectTool}
         onApprove={onApprove}
       />
-      <Composer onSubmit={onSubmit} disabled={state.isRunning} />
+      <Composer onSubmit={onSubmit} onStop={onStop} disabled={state.isRunning} />
     </main>
   );
 }
@@ -674,7 +678,7 @@ function ConversationTrace({
   messages,
   tools,
   fileChanges,
-  pendingApproval,
+  pendingApprovals,
   isRunning,
   onSelectTool,
   onApprove,
@@ -682,7 +686,7 @@ function ConversationTrace({
   messages: NonSystemMessage[];
   tools: AgentUiState["tools"];
   fileChanges: AgentUiState["fileChanges"];
-  pendingApproval: AgentUiState["pendingApproval"];
+  pendingApprovals: AgentUiState["pendingApprovals"];
   isRunning: boolean;
   onSelectTool: (id: string) => void;
   onApprove: (toolUseId: string, decision: ApprovalDecision) => Promise<void>;
@@ -717,7 +721,7 @@ function ConversationTrace({
           message={message}
           tools={tools}
           fileChangesByToolUseId={fileChangesByToolUseId}
-          pendingApproval={pendingApproval}
+          pendingApprovals={pendingApprovals}
           onSelectTool={onSelectTool}
           onApprove={onApprove}
         />
@@ -743,14 +747,14 @@ function TraceMessage({
   message,
   tools,
   fileChangesByToolUseId,
-  pendingApproval,
+  pendingApprovals,
   onSelectTool,
   onApprove,
 }: {
   message: NonSystemMessage;
   tools: AgentUiState["tools"];
   fileChangesByToolUseId: Record<string, AgentUiState["fileChanges"]>;
-  pendingApproval: AgentUiState["pendingApproval"];
+  pendingApprovals: AgentUiState["pendingApprovals"];
   onSelectTool: (id: string) => void;
   onApprove: (toolUseId: string, decision: ApprovalDecision) => Promise<void>;
 }) {
@@ -775,7 +779,7 @@ function TraceMessage({
           if (part.type === "tool_use") {
             const tool = tools[part.id];
             const changes = fileChangesByToolUseId[part.id] ?? [];
-            const isPending = pendingApproval?.toolUseId === part.id;
+            const pendingApproval = pendingApprovals[part.id];
             return (
               <div key={part.id} className="trace-tool-block">
                 <ToolChip
@@ -786,7 +790,7 @@ function TraceMessage({
                   durationMs={tool?.durationMs}
                   onClick={() => onSelectTool(part.id)}
                 />
-                {isPending && (
+                {pendingApproval && (
                   <InlineApprovalCard
                     toolUseId={part.id}
                     toolName={pendingApproval.toolName ?? part.name}
@@ -952,7 +956,7 @@ function EmptyState() {
   );
 }
 
-function Composer({ onSubmit, disabled }: { onSubmit: (prompt: string) => Promise<void>; disabled: boolean }) {
+function Composer({ onSubmit, onStop, disabled }: { onSubmit: (prompt: string) => Promise<void>; onStop: () => Promise<void>; disabled: boolean }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -985,9 +989,15 @@ function Composer({ onSubmit, disabled }: { onSubmit: (prompt: string) => Promis
       />
       <div className="composer-toolbar">
         <small className="composer-hint">Shift+Enter for new line · ⌘↵ to send</small>
-        <button className="composer-btn" disabled={disabled} type="submit">
-          {disabled ? "Running…" : "Run →"}
-        </button>
+        {disabled ? (
+          <button className="composer-btn stop" type="button" onClick={() => void onStop()}>
+            Stop
+          </button>
+        ) : (
+          <button className="composer-btn" type="submit">
+            Run →
+          </button>
+        )}
       </div>
     </form>
   );

@@ -13,6 +13,7 @@ export function createInitialAgentUiState(): AgentUiState {
     isRunning: false,
     tools: {},
     pendingApproval: null,
+    pendingApprovals: {},
     approvals: {},
     timeline: [],
     tokenUsage: { latestInputTokens: 0, latestOutputTokens: 0, sessionTotalTokens: 0 },
@@ -55,7 +56,7 @@ export function reduceRuntimeEvent(state: AgentUiState, event: RuntimeEvent): Ag
         runId: event.runId,
         step: event.step,
         streamingText: "",
-        messages: appendAssistantMessage(baseState.messages, event.message),
+        messages: upsertAssistantMessage(baseState.messages, event.message),
       };
 
     case "tool.requested":
@@ -79,7 +80,11 @@ export function reduceRuntimeEvent(state: AgentUiState, event: RuntimeEvent): Ag
     case "approval.requested":
       return {
         ...baseState,
-        pendingApproval: { toolUseId: event.toolUseId, toolName: event.toolName, input: event.input, prompt: event.prompt, resolve: event.resolve, agentId: event.agentId },
+        pendingApproval: baseState.pendingApproval ?? { toolUseId: event.toolUseId, toolName: event.toolName, input: event.input, prompt: event.prompt, resolve: event.resolve, agentId: event.agentId },
+        pendingApprovals: {
+          ...baseState.pendingApprovals,
+          [event.toolUseId]: { toolUseId: event.toolUseId, toolName: event.toolName, input: event.input, prompt: event.prompt, resolve: event.resolve, agentId: event.agentId },
+        },
         approvals: {
           ...baseState.approvals,
           [event.toolUseId]: { toolUseId: event.toolUseId, toolName: event.toolName, input: event.input, prompt: event.prompt, resolve: event.resolve, agentId: event.agentId },
@@ -88,9 +93,11 @@ export function reduceRuntimeEvent(state: AgentUiState, event: RuntimeEvent): Ag
 
     case "approval.resolved": {
       const previous = baseState.approvals[event.toolUseId] ?? { toolUseId: event.toolUseId };
+      const { [event.toolUseId]: _resolved, ...pendingApprovals } = baseState.pendingApprovals;
       return {
         ...baseState,
-        pendingApproval: baseState.pendingApproval?.toolUseId === event.toolUseId ? null : baseState.pendingApproval,
+        pendingApproval: baseState.pendingApproval?.toolUseId === event.toolUseId ? firstPendingApproval(pendingApprovals) : baseState.pendingApproval,
+        pendingApprovals,
         approvals: {
           ...baseState.approvals,
           [event.toolUseId]: { toolUseId: previous.toolUseId, approved: event.approved, agentId: event.agentId ?? previous.agentId },
@@ -204,8 +211,20 @@ function reduceModelDelta(state: AgentUiState, event: Extract<RuntimeEvent, { ty
   return state;
 }
 
-function appendAssistantMessage(messages: NonSystemMessage[], message: AssistantMessage): NonSystemMessage[] {
-  return [...messages, message];
+function upsertAssistantMessage(messages: NonSystemMessage[], message: AssistantMessage): NonSystemMessage[] {
+  const toolUseIds = message.content
+    .filter((content) => content.type === "tool_use")
+    .map((content) => content.id);
+  if (toolUseIds.length === 0) return [...messages, message];
+
+  const existingIndex = messages.findIndex(
+    (candidate) => candidate.role === "assistant" && candidate.content.some((content) => content.type === "tool_use" && toolUseIds.includes(content.id)),
+  );
+  if (existingIndex < 0) return [...messages, message];
+
+  const next = [...messages];
+  next[existingIndex] = message;
+  return next;
 }
 
 function parseToolUseDeltaInput(inputJsonDelta: string | undefined): Record<string, unknown> {
@@ -228,6 +247,10 @@ function upsertToolUseMessage(messages: NonSystemMessage[], message: AssistantMe
   if (existingIndex >= 0) next[existingIndex] = message;
   else next.push(message);
   return next;
+}
+
+function firstPendingApproval(approvals: Record<string, NonNullable<ReturnType<typeof createInitialAgentUiState>["pendingApproval"]>>) {
+  return Object.values(approvals)[0] ?? null;
 }
 
 function trackAgentLane(state: AgentUiState, event: RuntimeEvent): AgentUiState {

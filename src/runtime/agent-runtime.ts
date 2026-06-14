@@ -6,7 +6,7 @@ import type { ToolExecutionResult } from "@/tools/types";
 
 import type { AgentContext, BeforeToolUseResult } from "./middleware";
 import { createRunId } from "./session";
-import { executeToolCall } from "./tool-executor";
+import { streamToolCallExecution } from "./tool-executor";
 import { formatToolResultForMessage } from "./tool-result-runtime";
 import { RuntimeTranscript } from "./transcript";
 import type { AgentRunOptions, AgentRuntimeOptions } from "./types";
@@ -166,9 +166,16 @@ export class AgentRuntime {
    * 并行执行多个工具调用，按完成顺序产出事件，并将结果作为 ToolMessage 追加到消息历史。
    */
   private async *executeToolUses(runId: string, step: number, toolUses: ToolUseContentBlock[]): AsyncIterable<RuntimeEvent> {
-    const pending = toolUses.map(async (toolUse, index) => {
+    type ToolStreamState = {
+      index: number;
+      toolUse: ToolUseContentBlock;
+      iterator: AsyncIterator<RuntimeEvent>;
+      next: Promise<{ index: number; result: IteratorResult<RuntimeEvent> }>;
+    };
+
+    const pending = await Promise.all(toolUses.map(async (toolUse, index): Promise<ToolStreamState> => {
       const beforeResult = await this.runBeforeToolUse(toolUse);
-      const events = await executeToolCall({
+      const iterator = streamToolCallExecution({
         runId,
         step,
         toolUse,
@@ -180,26 +187,39 @@ export class AgentRuntime {
         askUser: this.askUser,
         approvalPersistence: this.approvalPersistence,
         ...(beforeResult.skip ? { skipResult: beforeResult.result } : {}),
-      });
-      const completed = events.find((event) => event.type === "tool.completed");
-      if (completed?.type === "tool.completed") await this.runAfterToolUse(toolUse, completed.result);
-      return { index, toolUse, events };
-    });
+      })[Symbol.asyncIterator]();
+      return {
+        index,
+        toolUse,
+        iterator,
+        next: iterator.next().then((result) => ({ index, result })),
+      };
+    }));
 
-    // 使用 Promise.race 按完成顺序消费
-    const remaining = new Set(pending.map((_, index) => index));
+    const remaining = new Map(pending.map((state) => [state.index, state]));
     while (remaining.size > 0) {
-      const completed = await Promise.race([...remaining].map((index) => pending[index]!));
-      remaining.delete(completed.index);
-      for (const event of completed.events) yield event;
-      const completedEvent = completed.events.find((event) => event.type === "tool.completed");
-      if (completedEvent?.type === "tool.completed") {
+      const completed = await Promise.race([...remaining.values()].map((state) => state.next));
+      const state = remaining.get(completed.index);
+      if (!state) continue;
+      if (completed.result.done) {
+        remaining.delete(completed.index);
+        continue;
+      }
+
+      const event = completed.result.value;
+      yield event;
+
+      if (event.type === "tool.completed") {
+        remaining.delete(completed.index);
+        await this.runAfterToolUse(state.toolUse, event.result);
         // UI 事件保留完整结果；写回模型上下文时使用更短、更稳定的结构化内容。
         const toolMessage: ToolMessage = {
           role: "tool",
-          content: [{ type: "tool_result", toolUseId: completed.toolUse.id, content: formatToolResultForMessage({ toolName: completed.toolUse.name, result: completedEvent.result }), isError: !completedEvent.result.ok }],
+          content: [{ type: "tool_result", toolUseId: state.toolUse.id, content: formatToolResultForMessage({ toolName: state.toolUse.name, result: event.result }), isError: !event.result.ok }],
         };
         this.transcript.append(toolMessage);
+      } else {
+        state.next = state.iterator.next().then((result) => ({ index: state.index, result }));
       }
     }
   }

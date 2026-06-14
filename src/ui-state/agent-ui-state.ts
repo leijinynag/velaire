@@ -61,6 +61,7 @@ export interface AgentUiState {
   isRunning: boolean;
   tools: Record<string, AgentToolRun>;
   pendingApproval: AgentApprovalState | null;
+  pendingApprovals: Record<string, AgentApprovalState>;
   approvals: Record<string, AgentApprovalState>;
   timeline: AgentTimelineItem[];
   tokenUsage: AgentTokenUsageState;

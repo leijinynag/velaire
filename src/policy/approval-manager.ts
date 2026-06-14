@@ -48,6 +48,21 @@ export class ApprovalManager {
     return true;
   }
 
+  denyAllPending(): number {
+    let count = 0;
+    if (this.request) {
+      this.request.resolve("deny");
+      this.request = undefined;
+      count += 1;
+    }
+    for (const request of this.queue.splice(0)) {
+      request.resolve("deny");
+      count += 1;
+    }
+    this.subscriber?.(null);
+    return count;
+  }
+
   subscribe(callback: (request: ApprovalRequest | null) => void): () => void {
     this.subscriber = callback;
     this.processQueue();

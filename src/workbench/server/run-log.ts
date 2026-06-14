@@ -17,10 +17,24 @@ function runLogPath(cwd: string, runId: string): string {
   return path.join(runLogsDirectory(cwd), `${runId}.jsonl`);
 }
 
+const appendQueues = new Map<string, Promise<void>>();
+
 export async function appendRunEvent(cwd: string, runId: string, event: RuntimeEvent): Promise<void> {
-  await mkdir(runLogsDirectory(cwd), { recursive: true });
-  const line = `${JSON.stringify(event)}\n`;
-  await writeFile(runLogPath(cwd, runId), line, { flag: "a" });
+  const key = runLogPath(cwd, runId);
+  const previous = appendQueues.get(key) ?? Promise.resolve();
+  const next = previous
+    .catch(() => undefined)
+    .then(async () => {
+      await mkdir(runLogsDirectory(cwd), { recursive: true });
+      const line = `${JSON.stringify(event)}\n`;
+      await writeFile(key, line, { flag: "a" });
+    });
+  appendQueues.set(key, next);
+  try {
+    await next;
+  } finally {
+    if (appendQueues.get(key) === next) appendQueues.delete(key);
+  }
 }
 
 export async function readRunEvents(cwd: string, runId: string): Promise<RuntimeEvent[]> {

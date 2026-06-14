@@ -631,6 +631,12 @@ a { color: inherit; }
 }
 .composer-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-green) 85%, white); }
 .composer-btn:disabled { opacity: .5; cursor: not-allowed; background: var(--text-muted); color: var(--bg-base); }
+.composer-btn.stop {
+  background: color-mix(in srgb, var(--accent-red) 14%, transparent);
+  color: var(--accent-red);
+  border: 1px solid color-mix(in srgb, var(--accent-red) 38%, transparent);
+}
+.composer-btn.stop:hover { background: var(--accent-red); color: white; }
 
 /* ── Run Error ──────────────────────────────────────────────────────────── */
 .run-error {

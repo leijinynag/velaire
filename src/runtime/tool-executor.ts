@@ -6,14 +6,20 @@ import { toolFailure } from "@/tools/results";
 import type { ToolCallExecutionRequest } from "./types";
 
 export async function executeToolCall(request: ToolCallExecutionRequest): Promise<RuntimeEvent[]> {
+  const events: RuntimeEvent[] = [];
+  for await (const event of streamToolCallExecution(request)) {
+    events.push(event);
+  }
+  return events;
+}
+
+export async function* streamToolCallExecution(request: ToolCallExecutionRequest): AsyncIterable<RuntimeEvent> {
   const { runId, step, toolUse, registry, cwd, policyProfile, planMode, signal, askUser, approvalPersistence, skipResult } = request;
-  const events: RuntimeEvent[] = [
-    { type: "tool.requested", runId, step, toolUseId: toolUse.id, toolName: toolUse.name, input: toolUse.input },
-  ];
+  yield { type: "tool.requested", runId, step, toolUseId: toolUse.id, toolName: toolUse.name, input: toolUse.input };
 
   if (skipResult) {
-    events.push({ type: "tool.completed", runId, step, toolUseId: toolUse.id, toolName: toolUse.name, result: skipResult });
-    return events;
+    yield { type: "tool.completed", runId, step, toolUseId: toolUse.id, toolName: toolUse.name, result: skipResult };
+    return;
   }
 
   const tool = registry.get(toolUse.name);
@@ -36,10 +42,10 @@ export async function executeToolCall(request: ToolCallExecutionRequest): Promis
     decisionKind = "allow";
     reason = "Allowed by project settings.";
   }
-  events.push({ type: "policy.decision", runId, step, toolUseId: toolUse.id, decision: decisionKind, reason });
+  yield { type: "policy.decision", runId, step, toolUseId: toolUse.id, decision: decisionKind, reason };
 
   if (decisionKind === "deny") {
-    events.push({
+    yield {
       type: "tool.completed",
       runId,
       step,
@@ -51,15 +57,15 @@ export async function executeToolCall(request: ToolCallExecutionRequest): Promis
         code: "POLICY_DENIED",
         message: reason,
       }),
-    });
-    return events;
+    };
+    return;
   }
 
   if (decisionKind === "ask") {
     const approvalPromise = askUser
       ? askUser({ toolUseId: toolUse.id, toolName: toolUse.name, input: toolUse.input })
       : Promise.resolve<ApprovalDecision>("deny");
-    events.push({
+    yield {
       type: "approval.requested",
       runId,
       step,
@@ -67,14 +73,14 @@ export async function executeToolCall(request: ToolCallExecutionRequest): Promis
       toolName: toolUse.name,
       input: toolUse.input,
       prompt: `Allow ${toolUse.name}?`,
-    });
+    };
     const approval = await approvalPromise;
-    events.push({ type: "approval.resolved", runId, step, toolUseId: toolUse.id, approved: approval !== "deny" });
+    yield { type: "approval.resolved", runId, step, toolUseId: toolUse.id, approved: approval !== "deny" };
     if (approval === "allow_always_project") {
       await approvalPersistence?.persistAllowedTool(cwd, toolUse.name);
     }
     if (approval === "deny") {
-      events.push({
+      yield {
         type: "tool.completed",
         runId,
         step,
@@ -86,19 +92,19 @@ export async function executeToolCall(request: ToolCallExecutionRequest): Promis
           code: "APPROVAL_REQUIRED",
           message: "Tool execution requires approval.",
         }),
-      });
-      return events;
+      };
+      return;
     }
   }
 
-  events.push({ type: "tool.started", runId, step, toolUseId: toolUse.id, toolName: toolUse.name });
+  yield { type: "tool.started", runId, step, toolUseId: toolUse.id, toolName: toolUse.name };
   try {
     // 所有工具执行都集中在这里，runtime 其他层不能直接调用 tool.execute。
     const result = await registry.execute(toolUse.name, toolUse.input, { cwd, signal });
-    events.push({ type: "tool.completed", runId, step, toolUseId: toolUse.id, toolName: toolUse.name, result });
+    yield { type: "tool.completed", runId, step, toolUseId: toolUse.id, toolName: toolUse.name, result };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    events.push({
+    yield {
       type: "tool.completed",
       runId,
       step,
@@ -110,7 +116,6 @@ export async function executeToolCall(request: ToolCallExecutionRequest): Promis
         code: "TOOL_EXECUTION_FAILED",
         message,
       }),
-    });
+    };
   }
-  return events;
 }
