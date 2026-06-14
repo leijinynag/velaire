@@ -8,6 +8,13 @@ import { createInitialAgentUiState, reduceRuntimeEvent } from "@/ui-state";
 export type RunLogSummary = { runId: string; path: string; updatedAt: string };
 export type SessionSummary = { sessionId: string; workspace: string; runs: string[]; status: string; createdAt: string; updatedAt: string };
 export type SkillFrontmatter = { name: string; description: string; path: string };
+export type WorkspaceFileEntry = {
+  name: string;
+  path: string;
+  kind: "file" | "directory";
+  depth: number;
+  children?: WorkspaceFileEntry[];
+};
 
 type WorkbenchAction = RuntimeEvent | { type: "reset" } | { type: "session_loaded"; events: RuntimeEvent[] };
 
@@ -74,6 +81,8 @@ export function useWorkbenchRun() {
   const [serverWorkspace, setServerWorkspace] = useState<string | null>(null);
   const [availablePresets, setAvailablePresets] = useState<{ name: string; description: string }[]>([]);
   const [skills, setSkills] = useState<SkillFrontmatter[]>([]);
+  const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFileEntry[]>([]);
+  const [filesLoading, setFilesLoading] = useState(false);
   const [theme, setThemeState] = useState<"dark" | "light">(() => {
     try { return (localStorage.getItem("velaire-theme") as "dark" | "light") ?? "dark"; } catch { return "dark"; }
   });
@@ -153,6 +162,20 @@ export function useWorkbenchRun() {
       .catch(() => setSkills([]));
   }, []);
 
+  const refreshWorkspaceFiles = useCallback((cwd?: string | null) => {
+    const target = cwd ?? workspace;
+    if (!target) {
+      setWorkspaceFiles([]);
+      return;
+    }
+    setFilesLoading(true);
+    void fetch(`/api/workspace/files?cwd=${encodeURIComponent(target)}&depth=2`)
+      .then((r) => r.json())
+      .then((data: { files?: WorkspaceFileEntry[] }) => setWorkspaceFiles(data.files ?? []))
+      .catch(() => setWorkspaceFiles([]))
+      .finally(() => setFilesLoading(false));
+  }, [workspace]);
+
   // On mount: bootstrap + restore session from localStorage
   useEffect(() => {
     void fetch("/api/bootstrap")
@@ -162,6 +185,8 @@ export function useWorkbenchRun() {
         if (bootstrap.workspace) {
           setServerWorkspace(bootstrap.workspace);
           refreshSkills(bootstrap.workspace);
+          refreshWorkspaceFiles(bootstrap.workspace);
+          if (bootstrap.demo) setWorkspace(bootstrap.workspace);
         }
         if (bootstrap.presets) {
           setAvailablePresets(Array.isArray(bootstrap.presets) ? bootstrap.presets as { name: string; description: string }[] : []);
@@ -181,6 +206,7 @@ export function useWorkbenchRun() {
                   setSessionIdState(stored.sessionId);
                   activeSessionIdRef.current = stored.sessionId;
                   setWorkspace(stored.workspace);
+                  refreshWorkspaceFiles(stored.workspace);
                   openSessionEventSource(stored.sessionId, 0);
                 });
               })
@@ -189,6 +215,7 @@ export function useWorkbenchRun() {
           // Also set serverWorkspace as workspace default if no stored session
           if (!loadSessionFromStorage() && bootstrap.workspace) {
             setWorkspace(bootstrap.workspace);
+            refreshWorkspaceFiles(bootstrap.workspace);
           }
         }
       })
@@ -236,6 +263,7 @@ export function useWorkbenchRun() {
       const actualWorkspace = data.workspace ?? ws;
       setSessionId(data.sessionId, actualWorkspace);
       setWorkspace(actualWorkspace);
+      refreshWorkspaceFiles(actualWorkspace);
       setSelectedToolUseId(null);
       setSelectedInspector("timeline");
       openSessionEventSource(data.sessionId, 0);
@@ -246,7 +274,7 @@ export function useWorkbenchRun() {
       setError(e instanceof Error ? e.message : "Failed to create session");
       return null;
     }
-  }, [openSessionEventSource, refreshSkills, fetchSessions, setSessionId]);
+  }, [openSessionEventSource, refreshSkills, refreshWorkspaceFiles, fetchSessions, setSessionId]);
 
   // Switch to an existing session: load its events and reopen SSE
   const switchSession = useCallback(async (sid: string) => {
@@ -262,13 +290,14 @@ export function useWorkbenchRun() {
       setSessionId(data.sessionId, data.workspace);
       setWorkspace(data.workspace);
       refreshSkills(data.workspace);
+      refreshWorkspaceFiles(data.workspace);
       // openSessionEventSource will replay all historical events from server
       openSessionEventSource(data.sessionId, 0);
       fetchSessions();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to switch session");
     }
-  }, [openSessionEventSource, refreshSkills, fetchSessions, setSessionId]);
+  }, [openSessionEventSource, refreshSkills, refreshWorkspaceFiles, fetchSessions, setSessionId]);
 
   const switchWorkspace = useCallback(async (ws: string) => {
     dispatch({ type: "reset" });
@@ -360,6 +389,8 @@ export function useWorkbenchRun() {
     serverWorkspace,
     availablePresets,
     skills,
+    workspaceFiles,
+    filesLoading,
     theme,
     toggleTheme,
     createSession,
@@ -371,6 +402,7 @@ export function useWorkbenchRun() {
     replayRun,
     approve,
     refreshSkills,
+    refreshWorkspaceFiles,
     fetchSessions,
     selectedToolUseId,
     setSelectedToolUseId,

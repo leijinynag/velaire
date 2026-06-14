@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -224,5 +224,53 @@ describe("workbench server", () => {
       error: expect.stringContaining("absolute path"),
     });
     expect(createdWorkspaces).toEqual([]);
+  });
+
+  test("picks a workspace directory through an injected native picker", async () => {
+    const cwd = await makeTempDir();
+    const project = join(cwd, "picked-project");
+    await mkdir(project);
+
+    const response = await handleWorkbenchRequest(request("/api/workspaces/pick-folder", {
+      method: "POST",
+    }), {
+      cwd,
+      pickFolder: async () => ({ ok: true, path: project }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ path: project });
+  });
+
+  test("returns picker cancellation without falling back to manual paths", async () => {
+    const cwd = await makeTempDir();
+
+    const response = await handleWorkbenchRequest(request("/api/workspaces/pick-folder", {
+      method: "POST",
+    }), {
+      cwd,
+      pickFolder: async () => ({ ok: false, code: "PICKER_CANCELLED", message: "Folder selection was cancelled." }),
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      code: "PICKER_CANCELLED",
+      error: "Folder selection was cancelled.",
+    });
+  });
+
+  test("lists shallow workspace files for the files rail", async () => {
+    const cwd = await makeTempDir();
+    await mkdir(join(cwd, "src"));
+    await writeFile(join(cwd, "README.md"), "# demo");
+    await writeFile(join(cwd, ".env"), "secret=true");
+
+    const response = await handleWorkbenchRequest(request(`/api/workspace/files?cwd=${encodeURIComponent(cwd)}&depth=1`), { cwd });
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as { files: { name: string; path: string; kind: string }[] };
+    expect(body.files.map((file) => file.name)).toEqual(["src", "README.md"]);
+    expect(body.files.find((file) => file.name === "README.md")).toMatchObject({ kind: "file", path: join(cwd, "README.md") });
+    expect(body.files.find((file) => file.name === "src")).toMatchObject({ kind: "directory", path: join(cwd, "src") });
   });
 });

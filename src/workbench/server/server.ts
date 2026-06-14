@@ -2,6 +2,7 @@ import type { RuntimeEvent } from "@/foundation/events/types";
 import type { ApprovalDecision } from "@/policy/types";
 
 import { createDemoEvents, createDemoRunId } from "./demo-events";
+import { pickNativeFolder, type NativeFolderPicker } from "./native-folder-picker";
 import { appendRunEvent, listRunLogs, readRunEvents } from "./run-log";
 import type { CreateRuntimeFn } from "./session-manager";
 import { SessionManager } from "./session-manager";
@@ -21,6 +22,7 @@ export interface WorkbenchRequestContext {
   demo?: boolean;
   sessionManager?: SessionManager;
   presets?: string[];
+  pickFolder?: NativeFolderPicker;
   /** @deprecated legacy demo path */
   runAgent?: (prompt: string) => AsyncIterable<RuntimeEvent> | Iterable<RuntimeEvent>;
 }
@@ -84,6 +86,16 @@ export async function handleWorkbenchRequest(request: Request, context: Workbenc
   if (method === "GET" && pathname === "/api/skills") {
     const skillCwd = url.searchParams.get("cwd") ?? cwd;
     return getSkills(skillCwd);
+  }
+
+  if (method === "POST" && pathname === "/api/workspaces/pick-folder") {
+    return pickWorkspaceFolder(context);
+  }
+
+  if (method === "GET" && pathname === "/api/workspace/files") {
+    const workspaceCwd = url.searchParams.get("cwd") ?? cwd;
+    const depth = Number.parseInt(url.searchParams.get("depth") ?? "1", 10);
+    return listWorkspaceFiles(workspaceCwd, cwd, Number.isFinite(depth) ? depth : 1);
   }
 
   // Resolve a directory name to an absolute path (for File System Access API picks)
@@ -247,6 +259,64 @@ async function getSkills(cwd: string): Promise<Response> {
   } catch {
     return json({ skills: [] });
   }
+}
+
+async function pickWorkspaceFolder(context: WorkbenchRequestContext): Promise<Response> {
+  const result = await (context.pickFolder ?? pickNativeFolder)(context.cwd);
+  if (!result.ok) return json({ code: result.code, error: result.message }, 400);
+
+  const resolved = await resolveWorkspacePath(result.path, context.cwd);
+  if (!resolved.ok) return json({ code: "PICKER_FAILED", error: resolved.error }, 400);
+  return json({ path: resolved.path });
+}
+
+type WorkspaceFileEntry = {
+  name: string;
+  path: string;
+  kind: "file" | "directory";
+  depth: number;
+  children?: WorkspaceFileEntry[];
+};
+
+async function listWorkspaceFiles(input: string, serverCwd: string, requestedDepth: number): Promise<Response> {
+  const resolved = await resolveWorkspacePath(input, serverCwd);
+  if (!resolved.ok) return json({ error: resolved.error }, 400);
+  const maxDepth = Math.max(1, Math.min(requestedDepth, 2));
+
+  try {
+    return json({ cwd: resolved.path, files: await readDirectoryEntries(resolved.path, 1, maxDepth) });
+  } catch (error) {
+    return json({ error: error instanceof Error ? error.message : "Failed to list workspace files" }, 500);
+  }
+}
+
+async function readDirectoryEntries(directory: string, depth: number, maxDepth: number): Promise<WorkspaceFileEntry[]> {
+  const { readdir } = await import("node:fs/promises");
+  const path = await import("node:path");
+  const entries = await readdir(directory, { withFileTypes: true });
+  const visibleEntries = entries
+    .filter((entry) => !entry.name.startsWith(".") && entry.name !== "node_modules" && entry.name !== "dist")
+    .sort((a, b) => {
+      if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    })
+    .slice(0, 120);
+
+  const files: WorkspaceFileEntry[] = [];
+  for (const entry of visibleEntries) {
+    const absolutePath = path.join(directory, entry.name);
+    const item: WorkspaceFileEntry = {
+      name: entry.name,
+      path: absolutePath,
+      kind: entry.isDirectory() ? "directory" : "file",
+      depth,
+    };
+    if (entry.isDirectory() && depth < maxDepth) {
+      item.children = await readDirectoryEntries(absolutePath, depth + 1, maxDepth);
+    }
+    files.push(item);
+  }
+  return files;
 }
 
 // --- Legacy run handlers (demo + file replay) ---

@@ -1,8 +1,8 @@
 import { useState } from "react";
 
-import type { SessionSummary, SkillFrontmatter } from "../hooks/use-workbench-run";
+import type { SessionSummary, SkillFrontmatter, WorkspaceFileEntry } from "../hooks/use-workbench-run";
 
-import { FolderPickerButton, hasFolderPicker } from "./workspace";
+import { NativeFolderPickerButton } from "./workspace";
 
 // ── Activity Rail ──────────────────────────────────────────────────────────────
 
@@ -62,6 +62,7 @@ export function SessionsPanel({
   const [creating, setCreating] = useState(false);
   const [pickedPath, setPickedPath] = useState<string | null>(null);
   const [selectedPreset, setSelectedPreset] = useState("coding");
+  const [pickerNotice, setPickerNotice] = useState<string | null>(null);
 
   function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -73,39 +74,28 @@ export function SessionsPanel({
   return (
     <div className="sessions-panel">
       <div className="sessions-toolbar">
-        <button className="sessions-refresh-btn" onClick={onRefresh} title="刷新">⟳</button>
+        <button className="sessions-refresh-btn" onClick={onRefresh} title="Refresh sessions">⟳</button>
         <button className="sessions-new-btn" onClick={() => setCreating((v) => !v)}>
-          {creating ? "取消" : "+ 新建会话"}
+          {creating ? "Cancel" : "+ New session"}
         </button>
       </div>
 
       {creating && (
         <form className="session-create-form" onSubmit={handleCreate}>
-          <div className="session-create-label">工作区目录</div>
-          {hasFolderPicker ? (
-            <>
-              <FolderPickerButton
-                className="session-folder-btn"
-                onPick={(path) => setPickedPath(path)}
-              >
-                {pickedPath ? `📁 ${pickedPath.split("/").slice(-2).join("/")}` : "📁 选择文件夹…"}
-              </FolderPickerButton>
-              {pickedPath && (
-                <div className="session-picked-path" title={pickedPath}>{pickedPath}</div>
-              )}
-              {!pickedPath && serverWorkspace && (
-                <div className="session-create-hint">留空则使用服务器目录：{serverWorkspace.split("/").pop()}</div>
-              )}
-            </>
-          ) : (
-            <input
-              className="session-path-input"
-              type="text"
-              value={pickedPath ?? ""}
-              onChange={(e) => setPickedPath(e.target.value || null)}
-              placeholder={serverWorkspace ?? "/path/to/project"}
-              autoFocus
-            />
+          <div className="session-create-label">Workspace directory</div>
+          <NativeFolderPickerButton
+            className="session-folder-btn"
+            onPick={(path) => { setPickedPath(path); setPickerNotice(null); }}
+            onError={setPickerNotice}
+          >
+            {pickedPath ? pickedPath.split("/").slice(-2).join("/") : "Choose folder"}
+          </NativeFolderPickerButton>
+          {pickerNotice && <div className="workspace-path-notice compact">{pickerNotice}</div>}
+          {pickedPath && (
+            <div className="session-picked-path" title={pickedPath}>{pickedPath}</div>
+          )}
+          {!pickedPath && serverWorkspace && (
+            <div className="session-create-hint">Default: {serverWorkspace.split("/").pop()}</div>
           )}
           {availablePresets.length > 0 && (
             <div className="session-preset-row">
@@ -121,12 +111,12 @@ export function SessionsPanel({
               ))}
             </div>
           )}
-          <button className="session-create-btn" type="submit">创建</button>
+          <button className="session-create-btn" type="submit">Create</button>
         </form>
       )}
 
       {sessions.length === 0 ? (
-        <div className="drawer-empty">暂无会话。<br />点击「新建会话」开始。</div>
+        <div className="drawer-empty">No sessions yet.<br />Create a session to start.</div>
       ) : (
         <ul className="sessions-list">
           {sessions.map((sess) => (
@@ -137,7 +127,7 @@ export function SessionsPanel({
               role="button"
               tabIndex={0}
               onKeyDown={(e) => e.key === "Enter" && onSelect(sess.sessionId)}
-              title={`切换到会话 ${sess.sessionId}`}
+              title={`Switch to session ${sess.sessionId}`}
             >
               <div className="session-item-ws" title={sess.workspace}>
                 {sess.workspace.split("/").pop() ?? sess.workspace}
@@ -152,6 +142,121 @@ export function SessionsPanel({
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+export function FilesPanel({
+  workspace,
+  files,
+  loading,
+  onRefresh,
+}: {
+  workspace: string | null;
+  files: WorkspaceFileEntry[];
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  return (
+    <div className="files-panel">
+      <div className="drawer-section-head">
+        <div>
+          <span className="section-kicker">Project</span>
+          <strong>{workspace ? workspace.split("/").pop() : "No workspace"}</strong>
+        </div>
+        <button className="icon-action" onClick={onRefresh} title="Refresh files">⟳</button>
+      </div>
+      {workspace && <div className="workspace-mini-path" title={workspace}>{workspace}</div>}
+      {loading ? (
+        <div className="drawer-empty">Indexing workspace…</div>
+      ) : files.length === 0 ? (
+        <div className="drawer-empty">No visible files in this workspace.</div>
+      ) : (
+        <ul className="file-tree">
+          {files.map((file) => (
+            <FileTreeItem key={file.path} file={file} />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function FileTreeItem({ file }: { file: WorkspaceFileEntry }) {
+  const extension = file.kind === "file" && file.name.includes(".") ? file.name.split(".").pop() : "";
+  return (
+    <li className={`file-tree-item ${file.kind}`} title={file.path}>
+      <div className="file-tree-row">
+        <span className="file-tree-icon">{file.kind === "directory" ? "▸" : fileIcon(extension)}</span>
+        <span className="file-tree-name">{file.name}</span>
+      </div>
+      {file.children && file.children.length > 0 && (
+        <ul className="file-tree nested">
+          {file.children.map((child) => <FileTreeItem key={child.path} file={child} />)}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+export function SettingsPanel({
+  mode,
+  workspace,
+  sessionCount,
+  skillCount,
+  theme,
+  onToggleTheme,
+  onRefreshSessions,
+  onRefreshSkills,
+}: {
+  mode: "demo" | "live";
+  workspace: string | null;
+  sessionCount: number;
+  skillCount: number;
+  theme: "dark" | "light";
+  onToggleTheme: () => void;
+  onRefreshSessions: () => void;
+  onRefreshSkills: () => void;
+}) {
+  return (
+    <div className="settings-panel">
+      <div className="settings-card primary">
+        <span className="section-kicker">Runtime</span>
+        <div className="settings-row">
+          <span>Mode</span>
+          <strong>{mode === "demo" ? "Demo runtime" : "Live runtime"}</strong>
+        </div>
+        <div className="settings-row">
+          <span>Workspace</span>
+          <strong title={workspace ?? ""}>{workspace ? workspace.split("/").pop() : "None"}</strong>
+        </div>
+      </div>
+      <div className="settings-grid">
+        <div className="settings-stat">
+          <span>{sessionCount}</span>
+          <small>sessions</small>
+        </div>
+        <div className="settings-stat">
+          <span>{skillCount}</span>
+          <small>skills</small>
+        </div>
+      </div>
+      <div className="settings-card">
+        <span className="section-kicker">Interface</span>
+        <button className="settings-action" onClick={onToggleTheme}>
+          Theme · {theme}
+        </button>
+        <button className="settings-action" onClick={onRefreshSessions}>
+          Refresh sessions
+        </button>
+        <button className="settings-action" onClick={onRefreshSkills}>
+          Refresh skills
+        </button>
+      </div>
+      <div className="settings-card subtle">
+        <span className="section-kicker">Storage</span>
+        <p>Run logs are written as JSONL under the local Velaire workspace. Web actions stay scoped to workbench APIs.</p>
+      </div>
     </div>
   );
 }
@@ -236,3 +341,11 @@ function relativeTime(isoString: string): string {
   return `${Math.floor(diffHr / 24)}d ago`;
 }
 
+function fileIcon(extension: string | false | undefined): string {
+  if (!extension) return "•";
+  if (["ts", "tsx", "js", "jsx"].includes(extension)) return "TS";
+  if (["md", "mdx"].includes(extension)) return "MD";
+  if (["json", "yaml", "yml"].includes(extension)) return "{}";
+  if (["css", "scss"].includes(extension)) return "#";
+  return "•";
+}

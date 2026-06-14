@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { AgentUiState } from "@/ui-state";
 import type { deriveMetricsView } from "@/ui-state";
 
-import { FolderPickerButton, hasFolderPicker } from "./workspace";
+import { NativeFolderPickerButton } from "./workspace";
 
 // ── Header ─────────────────────────────────────────────────────────────────────
 
@@ -69,43 +69,19 @@ function WorkspacePicker({ workspace, onSwitch }: { workspace: string; onSwitch?
             <span className="workspace-icon">⌂</span>
             <span style={{ fontSize: "0.78rem", wordBreak: "break-all" }}>{workspace}</span>
           </div>
-          {hasFolderPicker && (
-            <>
-              <FolderPickerButton
-                className="workspace-picker-browse-btn"
-                onPick={(path) => { onSwitch?.(path); setNotice(null); setOpen(false); }}
-                onResolveFailed={(name) => setNotice(`${name} 只能读取到文件夹名，请输入绝对路径。`)}
-              >
-                浏览定位…
-              </FolderPickerButton>
-              {notice && <div className="workspace-path-notice compact">{notice}</div>}
-            </>
+          <NativeFolderPickerButton
+            className="workspace-picker-browse-btn"
+            onPick={(path) => { onSwitch?.(path); setNotice(null); setOpen(false); }}
+            onError={setNotice}
+          >
+            Choose another folder
+          </NativeFolderPickerButton>
+          {notice && (
+            <div className="workspace-path-notice compact">{notice}</div>
           )}
-          <WorkspaceTextSwitch onSwitch={(ws) => { onSwitch?.(ws); setOpen(false); }} />
         </div>
       )}
     </div>
-  );
-}
-
-function WorkspaceTextSwitch({ onSwitch }: { onSwitch: (ws: string) => void }) {
-  const [val, setVal] = useState("");
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const trimmed = val.trim();
-    if (trimmed) onSwitch(trimmed);
-  }
-  return (
-    <form onSubmit={handleSubmit} className="workspace-switch-form">
-      <input
-        className="workspace-input"
-        value={val}
-        onChange={(e) => setVal(e.target.value)}
-        placeholder="/path/to/project"
-        autoFocus
-      />
-      <button type="submit" className="workspace-picker-browse-btn" disabled={!val.trim()}>切换</button>
-    </form>
   );
 }
 
@@ -117,4 +93,3 @@ function StatusBadge({ isRunning }: { isRunning: boolean }) {
     </span>
   );
 }
-

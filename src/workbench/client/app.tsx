@@ -3,7 +3,7 @@ import { deriveConversationView, deriveMetricsView } from "@/ui-state";
 import { AgentCanvas } from "./components/conversation";
 import { Header } from "./components/header";
 import { InspectorPanel } from "./components/inspector";
-import { ActivityRail, RailDrawer, SessionsPanel, SkillsPanel } from "./components/rail";
+import { ActivityRail, FilesPanel, RailDrawer, SessionsPanel, SettingsPanel, SkillsPanel } from "./components/rail";
 import { ResizableWorkbenchLayout } from "./components/resizable-layout";
 import { WorkspaceLanding } from "./components/workspace";
 import { useWorkbenchRun } from "./hooks/use-workbench-run";
@@ -19,6 +19,8 @@ export function WorkbenchApp() {
     serverWorkspace,
     availablePresets,
     skills,
+    workspaceFiles,
+    filesLoading,
     theme,
     toggleTheme,
     createSession,
@@ -29,6 +31,7 @@ export function WorkbenchApp() {
     runPrompt,
     approve,
     refreshSkills,
+    refreshWorkspaceFiles,
     fetchSessions,
     selectedToolUseId,
     setSelectedToolUseId,
@@ -69,6 +72,28 @@ export function WorkbenchApp() {
         skills={skills}
         onRefresh={() => refreshSkills(workspace ?? undefined)}
         onCreateSkill={(name, desc) => void handleSubmit(`请帮我创建一个技能文件，路径为 ~/.velaire/skills/${name}/SKILL.md，技能名称为"${name}"，描述为：${desc}。请先创建目录，再写入包含正确 frontmatter（name 和 description 字段）以及工作流说明的 SKILL.md 文件。`)}
+      />
+    </RailDrawer>
+  ) : activeRailItem === "Files" ? (
+    <RailDrawer title="Files">
+      <FilesPanel
+        workspace={workspace}
+        files={workspaceFiles}
+        loading={filesLoading}
+        onRefresh={() => refreshWorkspaceFiles(workspace)}
+      />
+    </RailDrawer>
+  ) : activeRailItem === "Settings" ? (
+    <RailDrawer title="Settings">
+      <SettingsPanel
+        mode={mode}
+        workspace={workspace}
+        sessionCount={sessions.length}
+        skillCount={skills.length}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        onRefreshSessions={fetchSessions}
+        onRefreshSkills={() => refreshSkills(workspace ?? undefined)}
       />
     </RailDrawer>
   ) : null;

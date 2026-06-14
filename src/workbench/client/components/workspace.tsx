@@ -1,52 +1,32 @@
 import { useState } from "react";
 
-// ── Folder Picker ──────────────────────────────────────────────────────────────
+// ── Native Workspace Picker ───────────────────────────────────────────────────
 
-// File System Access API is only available in secure contexts (HTTPS/localhost).
-export const hasFolderPicker = typeof window !== "undefined" && "showDirectoryPicker" in window;
-
-export function FolderPickerButton({
+export function NativeFolderPickerButton({
   onPick,
-  onResolveFailed,
+  onError,
   className,
   children,
 }: {
   onPick: (path: string) => void;
-  onResolveFailed?: (folderName: string, message: string) => void;
+  onError?: (message: string) => void;
   className?: string;
   children?: React.ReactNode;
 }) {
   const [picking, setPicking] = useState(false);
-  const [pickedName, setPickedName] = useState<string | null>(null);
 
   async function handleClick() {
-    if (!hasFolderPicker) return;
     setPicking(true);
     try {
-      // showDirectoryPicker() opens OS folder browser
-      const handle = await (window as unknown as { showDirectoryPicker(): Promise<{ name: string }> }).showDirectoryPicker();
-      setPickedName(handle.name);
-      // Send handle name to server to resolve the absolute path
-      const res = await fetch(`/api/resolve-path?name=${encodeURIComponent(handle.name)}`).catch(() => null);
-      let resolvedPath: string | null = null;
-      if (res?.ok) {
-        const data = (await res.json()) as { path?: string; error?: string };
-        resolvedPath = data.path ?? null;
-        if (!resolvedPath) {
-          onResolveFailed?.(handle.name, data.error ?? "无法从服务器工作目录解析此文件夹，请输入绝对路径。");
-          return;
-        }
-      }
-      if (!resolvedPath) {
-        onResolveFailed?.(handle.name, "浏览器只提供了文件夹名称，请输入该目录的绝对路径。");
+      const response = await fetch("/api/workspaces/pick-folder", { method: "POST" });
+      const data = (await response.json()) as { path?: string; error?: string; code?: string };
+      if (!response.ok || !data.path) {
+        if (data.code !== "PICKER_CANCELLED") onError?.(data.error ?? "Unable to open the system folder picker.");
         return;
       }
-      onPick(resolvedPath);
+      onPick(data.path);
     } catch (err) {
-      // User cancelled or API not available
-      if (err instanceof Error && err.name !== "AbortError") {
-        console.warn("showDirectoryPicker error:", err);
-      }
+      onError?.(err instanceof Error ? err.message : "Folder selection failed.");
     } finally {
       setPicking(false);
     }
@@ -57,10 +37,10 @@ export function FolderPickerButton({
       type="button"
       className={className ?? "folder-picker-btn"}
       onClick={() => void handleClick()}
-      disabled={picking || !hasFolderPicker}
-      title={hasFolderPicker ? "点击选择文件夹" : "浏览器不支持文件夹选择（需要 HTTPS 或 localhost）"}
+      disabled={picking}
+      title="Open system folder picker"
     >
-      {picking ? "选择中…" : (children ?? (pickedName ? `📁 ${pickedName}` : "📁 浏览文件夹…"))}
+      {picking ? "Selecting…" : (children ?? "Choose folder")}
     </button>
   );
 }
@@ -78,7 +58,6 @@ export function WorkspaceLanding({
 }) {
   const [selectedPreset, setSelectedPreset] = useState("coding");
   const [pickedPath, setPickedPath] = useState<string | null>(null);
-  const [manualPath, setManualPath] = useState("");
   const [pickerNotice, setPickerNotice] = useState<string | null>(null);
 
   function handleUseServer() {
@@ -86,8 +65,7 @@ export function WorkspaceLanding({
   }
 
   function handleUsePicked() {
-    const target = (pickedPath ?? manualPath).trim();
-    if (target) onSelect(target, selectedPreset);
+    if (pickedPath) onSelect(pickedPath, selectedPreset);
   }
 
   return (
@@ -96,13 +74,12 @@ export function WorkspaceLanding({
         <div className="landing-brand">
           <div className="landing-logo">V</div>
           <h1 className="landing-title">Velaire Workbench</h1>
-          <p className="landing-sub">选择工作区目录，开始一个新的 Agent 会话</p>
+          <p className="landing-sub">Select a real workspace path and start a live Agent session.</p>
         </div>
 
-        {/* 推荐：直接使用当前服务器目录 */}
         {serverWorkspace && (
           <div className="landing-server-ws">
-            <div className="landing-label">当前服务器目录</div>
+            <div className="landing-label">Server workspace</div>
             <div className="landing-ws-card">
               <span className="landing-ws-icon">⌂</span>
               <span className="landing-ws-path">{serverWorkspace}</span>
@@ -123,53 +100,32 @@ export function WorkspaceLanding({
               </div>
             )}
             <button className="landing-btn" onClick={handleUseServer} style={{ marginTop: 12 }}>
-              使用当前目录开始 →
+              Start from current directory
             </button>
           </div>
         )}
 
-        {/* 或者通过文件夹选择器选择其他目录 */}
-        <div className="landing-divider"><span>或选择其他目录</span></div>
+        <div className="landing-divider"><span>or open another project</span></div>
         <div className="landing-picker-area">
-          {hasFolderPicker ? (
-            <>
-              <FolderPickerButton
-                className="landing-btn landing-btn-secondary landing-folder-btn"
-                onPick={(path) => { setPickedPath(path); setManualPath(path); setPickerNotice(null); }}
-                onResolveFailed={(name, message) => {
-                  setPickedPath(null);
-                  setPickerNotice(`${name}: ${message}`);
-                }}
-              >
-                {pickedPath ? `选择了 ${pickedPath.split("/").slice(-2).join("/")}` : "浏览并尝试定位文件夹"}
-              </FolderPickerButton>
-              {pickerNotice && <div className="workspace-path-notice">{pickerNotice}</div>}
-              {pickedPath && (
-                <div className="landing-picked-path" title={pickedPath}>
-                  <span className="landing-ws-path">{pickedPath}</span>
-                </div>
-              )}
-            </>
-          ) : (
-            <p className="landing-picker-unavail">文件夹选择器需要 HTTPS 或 localhost 环境。</p>
-          )}
-          <form
-            className="workspace-path-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              handleUsePicked();
+          <NativeFolderPickerButton
+            className="landing-btn landing-btn-secondary landing-folder-btn"
+            onPick={(path) => { setPickedPath(path); setPickerNotice(null); }}
+            onError={(message) => {
+              setPickedPath(null);
+              setPickerNotice(message);
             }}
           >
-            <input
-              className="workspace-path-input"
-              value={manualPath}
-              onChange={(event) => { setManualPath(event.target.value); setPickedPath(null); }}
-              placeholder="/Users/you/project"
-            />
-            <button className="workspace-path-submit" type="submit" disabled={!(pickedPath ?? manualPath).trim()}>
-              开始
-            </button>
-          </form>
+            Browse workspace
+          </NativeFolderPickerButton>
+          {pickerNotice && <div className="workspace-path-notice">{pickerNotice}</div>}
+          {pickedPath && (
+            <div className="landing-picked-path" title={pickedPath}>
+              <span className="landing-ws-path">{pickedPath}</span>
+              <button className="workspace-path-submit" type="button" onClick={handleUsePicked}>
+                Open
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
