@@ -21,7 +21,7 @@ import { MockModelProvider } from "@/providers/mock/provider";
 import { ProviderRegistry } from "@/providers/registry";
 import type { ModelProvider } from "@/providers/types";
 import { AgentRuntime } from "@/runtime/agent-runtime";
-import type { RuntimeRunner } from "@/runtime/types";
+import type { AgentRunOptions, RuntimeRunner } from "@/runtime/types";
 import { createWorkbenchServer } from "@/workbench/server";
 import { createDemoEvents, createDemoRunId } from "@/workbench/server/demo-events";
 
@@ -34,6 +34,7 @@ export type RunCommandOptions = {
   provider?: string;
   preset?: string;
   prompt: string;
+  mode?: AgentRunOptions["mode"];
   modelName?: string;
   modelProvider?: "anthropic" | "openai-compatible";
   model?: string;
@@ -69,6 +70,7 @@ export function createProgram(): Command {
     .description("Run a non-interactive agent request")
     .option("--provider <provider>", "model provider to use")
     .option("--preset <preset>", "agent preset to use")
+    .option("--mode <mode>", "run mode: normal, plan, or multi-agent")
     .requiredOption("--prompt <prompt>", "prompt to send to the agent")
     .option("--model-name <name>", "first-run model configuration name")
     .option("--model-provider <provider>", "first-run model provider")
@@ -161,7 +163,8 @@ async function runOnce(options: RunCommandOptions): Promise<void> {
   const config = loadConfig();
   const runtime = await createRuntimeFromConfig(config, options);
 
-  for await (const event of runtime.run(options.prompt)) {
+  const mode = normalizeRunMode(options.mode);
+  for await (const event of runtime.run(options.prompt, { mode })) {
     if (event.type === "model.delta" && event.delta.type === "text_delta") {
       process.stdout.write(event.delta.text);
     }
@@ -206,6 +209,12 @@ export async function createRuntimeFromConfig(
   }
   return runtime;
 }
+function normalizeRunMode(mode: AgentRunOptions["mode"] | undefined): AgentRunOptions["mode"] | undefined {
+  if (!mode) return undefined;
+  if (mode === "normal" || mode === "plan" || mode === "multi-agent") return mode;
+  throw new Error(`Unsupported mode: ${mode}. Expected normal, plan, or multi-agent.`);
+}
+
 // 解析 model entry，根据 modelName 或默认配置。
 function resolveModelEntry(modelName: string | undefined, config: VelaireConfig): ModelEntry {
   const name = modelName ?? config.defaultModel;

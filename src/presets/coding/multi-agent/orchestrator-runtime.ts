@@ -47,7 +47,7 @@ export class CodingOrchestratorRuntime implements RuntimeRunner {
 
   constructor(options: CodingOrchestratorRuntimeOptions) {
     this.provider = options.provider;
-    this.modelName = options.modelName;
+    this.modelName = "coding-multi-agent";
     this.cwd = options.cwd;
     this.policyProfile = options.policyProfile;
     this.askUser = options.askUser;
