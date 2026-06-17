@@ -15,6 +15,8 @@ export function AgentCanvas({
   conversation,
   error,
   onSubmit,
+  onPlanWithMultiAgent,
+  onStartImplementation,
   onStop,
   onSelectTool,
   onApprove,
@@ -23,13 +25,16 @@ export function AgentCanvas({
   conversation: ReturnType<typeof deriveConversationView>;
   error: string | null;
   onSubmit: (prompt: string) => Promise<void>;
+  onPlanWithMultiAgent?: (prompt: string) => Promise<void>;
+  onStartImplementation?: () => Promise<void>;
   onStop: () => Promise<void>;
   onSelectTool: (id: string) => void;
   onApprove: (toolUseId: string, decision: ApprovalDecision) => Promise<void>;
 }) {
   return (
     <main className="agent-canvas">
-      <AgentLanesBar agents={state.agents} />
+      <AgentLanesBar agents={state.agents} orchestration={state.orchestration} />
+      <PhaseTimeline orchestration={state.orchestration} />
       {error && <div className="run-error">{error}</div>}
       <ConversationTrace
         messages={conversation.messages}
@@ -40,12 +45,13 @@ export function AgentCanvas({
         onSelectTool={onSelectTool}
         onApprove={onApprove}
       />
-      <Composer onSubmit={onSubmit} onStop={onStop} disabled={state.isRunning} />
+      <ArtifactShelf artifacts={state.orchestration.artifacts} onStartImplementation={onStartImplementation} />
+      <Composer onSubmit={onSubmit} onPlanWithMultiAgent={onPlanWithMultiAgent} onStop={onStop} disabled={state.isRunning} />
     </main>
   );
 }
 
-function AgentLanesBar({ agents }: { agents: AgentUiState["agents"] }) {
+function AgentLanesBar({ agents, orchestration }: { agents: AgentUiState["agents"]; orchestration: AgentUiState["orchestration"] }) {
   const lanes = Object.values(agents);
   const display = lanes.length > 0 ? lanes : [{ id: "default", name: "Default Agent", status: "idle" as const, step: null, eventCount: 0 }];
   return (
@@ -53,12 +59,59 @@ function AgentLanesBar({ agents }: { agents: AgentUiState["agents"] }) {
       {display.map((agent) => (
         <div key={agent.id} className={`agent-lane-card ${agent.status}`}>
           <span className={`status-dot ${agent.status}`} />
+          <span className="lane-role-icon">{roleIcon(agent.id)}</span>
           <div className="lane-info">
             <span className="lane-name">{agent.name}</span>
             <small className="lane-meta">
               {agent.status} · step {agent.step ?? 0} · {agent.eventCount} events
             </small>
+            {orchestration.phase && agent.status === "running" && <small className="lane-meta">phase · {orchestration.phase}</small>}
           </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function roleIcon(agentId: string): string {
+  if (agentId === "planner") return "◇";
+  if (agentId === "generator") return "⌘";
+  if (agentId === "evaluator") return "✓";
+  return "●";
+}
+
+function PhaseTimeline({ orchestration }: { orchestration: AgentUiState["orchestration"] }) {
+  const artifacts = Object.values(orchestration.artifacts);
+  if (!orchestration.phase && artifacts.length === 0 && orchestration.handoffs.length === 0) return null;
+  return (
+    <div className="phase-timeline">
+      <span className={`phase-pill ${orchestration.status}`}>{orchestration.phase ?? "idle"}</span>
+      {orchestration.handoffs.slice(-3).map((handoff, index) => (
+        <span key={`${handoff.fromAgentId}:${handoff.toAgentId}:${index}`} className="handoff-pill">
+          {handoff.fromAgentId} → {handoff.toAgentId}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function ArtifactShelf({ artifacts, onStartImplementation }: { artifacts: AgentUiState["orchestration"]["artifacts"]; onStartImplementation?: () => Promise<void> }) {
+  const list = Object.values(artifacts);
+  if (list.length === 0) return null;
+  return (
+    <div className="artifact-shelf">
+      {list.map((artifact) => (
+        <div key={artifact.path} className="artifact-card">
+          <div>
+            <span className="artifact-kind">{artifact.kind ?? "artifact"}</span>
+            <code className="artifact-path">{artifact.path}</code>
+            {artifact.summary && <p>{artifact.summary}</p>}
+          </div>
+          {artifact.kind === "spec" && onStartImplementation && (
+            <button className="artifact-action" onClick={() => void onStartImplementation()}>
+              Approve spec & start implementation
+            </button>
+          )}
         </div>
       ))}
     </div>
@@ -349,15 +402,18 @@ function EmptyState() {
   );
 }
 
-function Composer({ onSubmit, onStop, disabled }: { onSubmit: (prompt: string) => Promise<void>; onStop: () => Promise<void>; disabled: boolean }) {
+function Composer({ onSubmit, onPlanWithMultiAgent, onStop, disabled }: { onSubmit: (prompt: string) => Promise<void>; onPlanWithMultiAgent?: (prompt: string) => Promise<void>; onStop: () => Promise<void>; disabled: boolean }) {
   const ref = useRef<HTMLTextAreaElement>(null);
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  function submitWith(handler: (prompt: string) => Promise<void>) {
     const val = ref.current?.value.trim();
     if (val) {
-      void onSubmit(val);
+      void handler(val);
       if (ref.current) ref.current.value = "";
     }
+  }
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    submitWith(onSubmit);
   }
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
@@ -387,9 +443,16 @@ function Composer({ onSubmit, onStop, disabled }: { onSubmit: (prompt: string) =
           Stop
         </button>
       ) : (
-        <button className="composer-btn" type="submit" title="Run prompt">
-          Run
-        </button>
+        <>
+          {onPlanWithMultiAgent && (
+            <button className="composer-btn secondary" type="button" title="Plan with multi-agent" onClick={() => submitWith(onPlanWithMultiAgent)}>
+              Plan with multi-agent
+            </button>
+          )}
+          <button className="composer-btn" type="submit" title="Run prompt">
+            Run
+          </button>
+        </>
       )}
     </form>
   );

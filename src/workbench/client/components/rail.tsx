@@ -106,7 +106,7 @@ export function SessionsPanel({
                   className={`session-preset-chip${selectedPreset === p.name ? " selected" : ""}`}
                   onClick={() => setSelectedPreset(p.name)}
                 >
-                  {p.name}
+                  {p.name === "coding-multi-agent" ? "Multi-Agent" : p.name}
                 </button>
               ))}
             </div>

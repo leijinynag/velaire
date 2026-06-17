@@ -1,9 +1,6 @@
 import { useInput } from "ink";
 import { useEffect, useMemo, useState } from "react";
 
-import type { CodingInteractionMode } from "../interaction-mode";
-import { nextCodingInteractionMode } from "../interaction-mode";
-
 import {
   buildPromptSubmission,
   filterCommands,
@@ -22,6 +19,8 @@ import {
   removeCharacterBeforeCursor,
   type InputEditorState,
 } from "../input-editor";
+import type { CodingInteractionMode } from "../interaction-mode";
+import { nextCodingInteractionMode } from "../interaction-mode";
 
 import { useInputHistory } from "./use-input-history";
 

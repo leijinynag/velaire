@@ -54,6 +54,11 @@ export function WorkbenchApp() {
   }
 
   const handleSubmit = mode === "demo" ? runPrompt : submitPrompt;
+  const handlePlanWithMultiAgent = (prompt: string) => submitPrompt(prompt, { mode: "plan" });
+  const latestSpecArtifact = Object.values(state.orchestration.artifacts).find((artifact) => artifact.kind === "spec") ?? null;
+  const handleStartImplementation = latestSpecArtifact
+    ? () => submitPrompt("Continue from approved spec.", { mode: "multi-agent", specPath: latestSpecArtifact.path })
+    : undefined;
   const drawer = activeRailItem === "Sessions" ? (
     <RailDrawer title="Sessions">
       <SessionsPanel
@@ -131,6 +136,8 @@ export function WorkbenchApp() {
           conversation={conversation}
           error={error}
           onSubmit={handleSubmit}
+          onPlanWithMultiAgent={handlePlanWithMultiAgent}
+          onStartImplementation={handleStartImplementation}
           onStop={stopRun}
           onSelectTool={setSelectedToolUseId}
           onApprove={approve}

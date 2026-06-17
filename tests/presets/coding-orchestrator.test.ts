@@ -1,12 +1,12 @@
-import { mkdtemp, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
-import { MockModelProvider } from "@/providers/mock/provider";
 import { CodingOrchestratorRuntime } from "@/presets/coding/multi-agent/orchestrator-runtime";
+import { MockModelProvider } from "@/providers/mock/provider";
 
 function createRuntime(cwd: string, provider: MockModelProvider) {
   return new CodingOrchestratorRuntime({

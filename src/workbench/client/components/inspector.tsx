@@ -94,6 +94,7 @@ function timelineKind(type: string): string {
   if (type.startsWith("tool.")) return "tool-event";
   if (type.startsWith("policy") || type.startsWith("approval")) return "policy-event";
   if (type.startsWith("model")) return "model-event";
+  if (type.startsWith("orchestration") || type.startsWith("artifact")) return "orchestration-event";
   return "agent-event";
 }
 

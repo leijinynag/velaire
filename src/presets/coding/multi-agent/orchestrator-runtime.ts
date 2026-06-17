@@ -1,14 +1,14 @@
 import { Model } from "@/foundation";
 import type { RuntimeEvent } from "@/foundation/events/types";
 import type { NonSystemMessage } from "@/foundation/messages/types";
-import type { ApprovalPersistence, RuntimeRunner } from "@/runtime/types";
-import { AgentRuntime } from "@/runtime/agent-runtime";
-import type { AgentMiddleware } from "@/runtime/middleware";
 import type { PolicyProfile } from "@/policy/types";
 import type { ModelProvider } from "@/providers/types";
+import { AgentRuntime } from "@/runtime/agent-runtime";
+import type { AgentMiddleware } from "@/runtime/middleware";
 import { createRunId } from "@/runtime/session";
-import { ToolRegistry } from "@/tools/registry";
+import type { ApprovalPersistence, RuntimeRunner } from "@/runtime/types";
 import { createCodingToolSystem } from "@/tools/coding";
+import { ToolRegistry } from "@/tools/registry";
 import { bashTool } from "@/tools/shell";
 import { createAskUserQuestionTool } from "@/tools/user-interaction";
 import { fileInfoTool, globSearchTool, grepSearchTool, listFilesTool, readFileTool } from "@/tools/workspace";

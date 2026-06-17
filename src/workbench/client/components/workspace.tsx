@@ -64,6 +64,10 @@ export function WorkspaceLanding({
     onSelect(serverWorkspace ?? "", selectedPreset);
   }
 
+  function handleUseMultiAgent() {
+    onSelect(serverWorkspace ?? "", "coding-multi-agent");
+  }
+
   function handleUsePicked() {
     if (pickedPath) onSelect(pickedPath, selectedPreset);
   }
@@ -101,6 +105,9 @@ export function WorkspaceLanding({
             )}
             <button className="landing-btn" onClick={handleUseServer} style={{ marginTop: 12 }}>
               Start from current directory
+            </button>
+            <button className="landing-btn landing-btn-secondary" onClick={handleUseMultiAgent} style={{ marginTop: 8 }}>
+              Start Multi-Agent Coding
             </button>
           </div>
         )}

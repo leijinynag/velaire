@@ -1,9 +1,9 @@
 import { Box, Text } from "ink";
 
 import type { PromptSubmission, SlashCommand } from "../command-registry";
+import { useCommandInput } from "../hooks/use-command-input";
 import type { CodingInteractionMode } from "../interaction-mode";
 import { modeGlyph, modeLabel } from "../interaction-mode";
-import { useCommandInput } from "../hooks/use-command-input";
 import { currentTheme } from "../themes";
 
 import { CommandList } from "./command-list";

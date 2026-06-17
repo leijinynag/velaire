@@ -6,7 +6,7 @@ import type { AgentUiState } from "@/ui-state";
 import { createInitialAgentUiState, reduceRuntimeEvent } from "@/ui-state";
 
 export type RunLogSummary = { runId: string; path: string; updatedAt: string };
-export type SessionSummary = { sessionId: string; workspace: string; runs: string[]; status: string; createdAt: string; updatedAt: string };
+export type SessionSummary = { sessionId: string; workspace: string; runs: string[]; status: string; createdAt: string; updatedAt: string; preset?: string };
 export type SkillFrontmatter = { name: string; description: string; path: string };
 export type WorkspaceFileEntry = {
   name: string;
@@ -308,7 +308,7 @@ export function useWorkbenchRun() {
     return createSession(ws);
   }, [createSession, setSessionId]);
 
-  const submitPrompt = useCallback(async (prompt: string) => {
+  const submitPrompt = useCallback(async (prompt: string, options: { mode?: "normal" | "plan" | "multi-agent"; specPath?: string } = {}) => {
     if (!sessionId) { setError("No active session."); return; }
     setError(null);
 
@@ -321,7 +321,7 @@ export function useWorkbenchRun() {
     const response = await fetch(`/api/sessions/${sessionId}/runs`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ prompt }),
+      body: JSON.stringify({ prompt, ...options }),
     });
     const data = (await response.json()) as { runId?: string; error?: string };
     if (!response.ok) {
