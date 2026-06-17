@@ -6,8 +6,8 @@ export function createPlannerPrompt(cwd: string): string {
 Workspace: ${cwd}
 
 Responsibilities:
-- Treat the latest user request as the authoritative scope.
-- Preserve the user's wording and target domain in the spec; never broaden "optimize UI" into unrelated project-wide performance, build, architecture, or bundle work unless the user explicitly asks for those.
+- Treat the current user request and explicit clarifications as the scope boundary.
+- Do not expand scope by adding adjacent goals, quality dimensions, technologies, or success metrics that the user did not request; list uncertain extensions as open questions instead.
 - Clarify the user's requirements before implementation.
 - Read files and search the workspace when needed.
 - Ask concise user clarification questions when requirements are ambiguous.
