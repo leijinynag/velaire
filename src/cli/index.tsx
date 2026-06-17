@@ -58,9 +58,11 @@ export function createProgram(): Command {
     .action(async () => {
       await ensureFirstRunConfig({});
       const approvalManager = new ApprovalManager();
-      const runtime = await createRuntimeFromConfig(loadConfig(), {}, { approvalManager });
+      const config = loadConfig();
+      const runtime = await createRuntimeFromConfig(config, {}, { approvalManager });
+      const multiAgentRuntime = await createRuntimeFromConfig(config, { preset: codingMultiAgentPreset.name }, { approvalManager });
       const commands = await loadAvailableCommands({ workspace: process.cwd(), cwd: process.cwd() });
-      render(<App approvalManager={approvalManager} commands={commands} runtime={runtime} />);
+      render(<App approvalManager={approvalManager} commands={commands} multiAgentRuntime={multiAgentRuntime} runtime={runtime} />);
     });
 
   registerConfigModelCommands(program);

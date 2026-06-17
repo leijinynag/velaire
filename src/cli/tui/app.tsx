@@ -17,11 +17,12 @@ import { useRuntimeEvents } from "./hooks/use-runtime-events";
 import type { CodingInteractionMode } from "./interaction-mode";
 import { buildTodoViewState, getNextTodo } from "./todo-view";
 
-export function App({ approvalManager, commands = BUILTIN_COMMANDS, runtime }: { approvalManager?: ApprovalManager; commands?: SlashCommand[]; runtime?: RuntimeRunner }) {
-  const { state, viewModel, applyEvent } = useRuntimeEvents({ modelName: runtime?.modelName });
+export function App({ approvalManager, commands = BUILTIN_COMMANDS, multiAgentRuntime, runtime }: { approvalManager?: ApprovalManager; commands?: SlashCommand[]; multiAgentRuntime?: RuntimeRunner; runtime?: RuntimeRunner }) {
+  const [mode, setMode] = useState<CodingInteractionMode>("normal");
+  const activeRuntime = mode === "normal" ? runtime : multiAgentRuntime ?? runtime;
+  const { state, viewModel, applyEvent } = useRuntimeEvents({ modelName: activeRuntime?.modelName });
   const todoView = useMemo(() => buildTodoViewState(viewModel.messages), [viewModel.messages]);
   const [approvalRequest, setApprovalRequest] = useState(() => approvalManager?.currentRequest ?? null);
-  const [mode, setMode] = useState<CodingInteractionMode>("normal");
 
   useEffect(() => {
     return approvalManager?.subscribe(setApprovalRequest);
@@ -29,8 +30,8 @@ export function App({ approvalManager, commands = BUILTIN_COMMANDS, runtime }: {
 
   const handleSubmit = useCallback((submission: PromptSubmission) => {
     if (!canSubmitPrompt({ hasPendingApproval: !!approvalRequest, streaming: viewModel.streaming })) return;
-    void handleSubmittedText(submission, runtime, applyEvent, commands, mode);
-  }, [applyEvent, approvalRequest, commands, mode, runtime, viewModel.streaming]);
+    void handleSubmittedText(submission, activeRuntime, applyEvent, commands, mode);
+  }, [activeRuntime, applyEvent, approvalRequest, commands, mode, viewModel.streaming]);
 
   return (
     <Box flexDirection="column" width="100%">
@@ -42,7 +43,7 @@ export function App({ approvalManager, commands = BUILTIN_COMMANDS, runtime }: {
       ) : null}
       {viewModel.errorText ? <Box paddingX={2}><Text color="red">Provider error: {viewModel.errorText}</Text></Box> : null}
       <StreamingIndicator streaming={viewModel.streaming} nextTodo={getNextTodo(todoView.latestTodos)?.content} />
-      <InputBox commands={commands} isActive={isInputActive({ hasPendingApproval: !!approvalRequest, streaming: viewModel.streaming })} mode={mode} onModeChange={setMode} onSubmit={handleSubmit} onAbort={() => runtime?.abort()} />
+      <InputBox commands={commands} isActive={isInputActive({ hasPendingApproval: !!approvalRequest, streaming: viewModel.streaming })} mode={mode} onModeChange={setMode} onSubmit={handleSubmit} onAbort={() => activeRuntime?.abort()} />
       {todoView.latestTodos ? null : null}
       <Footer mode={mode} modelName={viewModel.modelName} tokenUsage={viewModel.tokenUsage} />
     </Box>
@@ -99,8 +100,7 @@ export async function handleSubmittedText(submission: PromptSubmission | string,
   const runMode = requestedSkillName === "coding-plan" ? "plan" : mode;
   const isMultiAgentRuntime = runtime.modelName === "coding-multi-agent";
   // coding-plan skill 继续触发只读 planMode；TUI mode 额外传给 multi-agent orchestrator。
-  // 单 agent coding 在 plan/multi-agent TUI mode 下仍保持只读规划，避免误写代码。
-  await submitPromptToRuntime(text, runtime, applyEvent, { requestedSkillName, planMode: runMode === "plan" || (!isMultiAgentRuntime && runMode === "multi-agent"), mode: runMode });
+  await submitPromptToRuntime(text, runtime, applyEvent, { requestedSkillName, planMode: runMode === "plan" && !isMultiAgentRuntime, mode: runMode });
 }
 
 export async function submitPromptToRuntime(text: string, runtime: RuntimeRunner, applyEvent: (event: RuntimeEvent) => void, options: { requestedSkillName?: string | null; planMode?: boolean; mode?: CodingInteractionMode } = {}): Promise<void> {
