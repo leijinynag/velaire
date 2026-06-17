@@ -1,4 +1,5 @@
 import type { Model } from "@/foundation";
+import type { RuntimeEvent } from "@/foundation/events/types";
 import type { NonSystemMessage, ToolUseContentBlock } from "@/foundation/messages/types";
 import type { ApprovalDecision, PolicyProfile } from "@/policy/types";
 import type { ModelProvider } from "@/providers/types";
@@ -13,8 +14,21 @@ export interface ApprovalPersistence {
 }
 
 export interface AgentRunOptions {
+  runId?: string;
+  agentId?: string;
+  agentName?: string;
+  mode?: "normal" | "plan" | "multi-agent";
+  specPath?: string;
   requestedSkillName?: string | null;
   planMode?: boolean;
+}
+
+export interface RuntimeRunner {
+  readonly modelName: string;
+  readonly messages: NonSystemMessage[];
+  run(input: string, options?: AgentRunOptions): AsyncIterable<RuntimeEvent>;
+  abort(): void;
+  hasApprovalHandler(): boolean;
 }
 
 export interface AgentRuntimeOptions {

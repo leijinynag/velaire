@@ -9,7 +9,8 @@ export type ToolCapability =
   | "external.side_effect"
   | "destructive"
   | "user.interaction"
-  | "planning";
+  | "planning"
+  | "artifact.write";
 
 export type ToolRiskLevel = "low" | "medium" | "high";
 

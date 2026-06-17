@@ -51,6 +51,27 @@ export interface AgentLaneState {
   eventCount: number;
 }
 
+export interface AgentArtifactState {
+  path: string;
+  kind?: string;
+  agentId?: string;
+  summary?: string;
+}
+
+export interface AgentHandoffState {
+  fromAgentId: string;
+  toAgentId: string;
+  summary?: string;
+  artifactPath?: string;
+}
+
+export interface AgentOrchestrationState {
+  phase: string | null;
+  status: "idle" | "running" | "awaiting_approval" | "passed" | "failed" | "aborted";
+  artifacts: Record<string, AgentArtifactState>;
+  handoffs: AgentHandoffState[];
+}
+
 export type AgentTimelineItem = TimelineItem;
 
 export interface AgentUiState {
@@ -71,6 +92,7 @@ export interface AgentUiState {
   fileChanges: FileChange[];
   events: RuntimeEvent[];
   policyDecisions: Record<string, AgentPolicyDecisionState>;
+  orchestration: AgentOrchestrationState;
 }
 
 export const DEFAULT_AGENT_ID = "default";

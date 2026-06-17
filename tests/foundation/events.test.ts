@@ -18,6 +18,10 @@ describe("runtime events", () => {
       "tool.started",
       "tool.completed",
       "timeline.item.added",
+      "orchestration.phase.started",
+      "orchestration.phase.completed",
+      "orchestration.handoff.created",
+      "artifact.updated",
       "agent.run.completed",
       "agent.error",
     ]);

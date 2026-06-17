@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { RuntimeEvent } from "@/foundation/events/types";
 import type { ApprovalManager } from "@/policy/approval-manager";
-import type { AgentRuntime } from "@/runtime/agent-runtime";
+import type { RuntimeRunner } from "@/runtime/types";
 
 import { BUILTIN_COMMANDS, formatHelp, resolveBuiltinCommand, type PromptSubmission, type SlashCommand } from "./command-registry";
 import { ApprovalPrompt } from "./components/approval-prompt";
@@ -15,7 +15,7 @@ import { StreamingIndicator } from "./components/streaming-indicator";
 import { useRuntimeEvents } from "./hooks/use-runtime-events";
 import { buildTodoViewState, getNextTodo } from "./todo-view";
 
-export function App({ approvalManager, commands = BUILTIN_COMMANDS, runtime }: { approvalManager?: ApprovalManager; commands?: SlashCommand[]; runtime?: AgentRuntime }) {
+export function App({ approvalManager, commands = BUILTIN_COMMANDS, runtime }: { approvalManager?: ApprovalManager; commands?: SlashCommand[]; runtime?: RuntimeRunner }) {
   const { state, viewModel, applyEvent } = useRuntimeEvents({ modelName: runtime?.modelName });
   const todoView = useMemo(() => buildTodoViewState(viewModel.messages), [viewModel.messages]);
   const [approvalRequest, setApprovalRequest] = useState(() => approvalManager?.currentRequest ?? null);
@@ -53,7 +53,7 @@ export function canSubmitPrompt(state: { hasPendingApproval: boolean; streaming:
   return isInputActive(state);
 }
 
-export async function handleSubmittedText(submission: PromptSubmission | string, runtime: AgentRuntime | undefined, applyEvent: (event: RuntimeEvent) => void, commands: SlashCommand[] = BUILTIN_COMMANDS): Promise<void> {
+export async function handleSubmittedText(submission: PromptSubmission | string, runtime: RuntimeRunner | undefined, applyEvent: (event: RuntimeEvent) => void, commands: SlashCommand[] = BUILTIN_COMMANDS): Promise<void> {
   const text = typeof submission === "string" ? submission : submission.text;
   const requestedSkillName = typeof submission === "string" ? null : submission.requestedSkillName;
   const command = resolveBuiltinCommand(text);
@@ -96,7 +96,7 @@ export async function handleSubmittedText(submission: PromptSubmission | string,
   await submitPromptToRuntime(text, runtime, applyEvent, { requestedSkillName, planMode: requestedSkillName === "coding-plan" });
 }
 
-export async function submitPromptToRuntime(text: string, runtime: AgentRuntime, applyEvent: (event: RuntimeEvent) => void, options: { requestedSkillName?: string | null; planMode?: boolean } = {}): Promise<void> {
+export async function submitPromptToRuntime(text: string, runtime: RuntimeRunner, applyEvent: (event: RuntimeEvent) => void, options: { requestedSkillName?: string | null; planMode?: boolean } = {}): Promise<void> {
   try {
     // TUI 只消费 RuntimeEvent，保持和 provider 原始流解耦。
     for await (const event of runtime.run(text, options)) {

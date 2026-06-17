@@ -22,6 +22,7 @@ export function createInitialAgentUiState(): AgentUiState {
     fileChanges: [],
     events: [],
     policyDecisions: {},
+    orchestration: { phase: null, status: "idle", artifacts: {}, handoffs: [] },
   };
 }
 
@@ -150,12 +151,59 @@ export function reduceRuntimeEvent(state: AgentUiState, event: RuntimeEvent): Ag
     case "timeline.item.added":
       return { ...baseState, timeline: [...baseState.timeline, event.item] };
 
+    case "orchestration.phase.started":
+      return {
+        ...baseState,
+        orchestration: { ...baseState.orchestration, phase: event.phase, status: "running" },
+        timeline: [...baseState.timeline, orchestrationTimelineItem(event.runId, event.phase, event.summary ?? `Started ${event.phase}`)],
+      };
+
+    case "orchestration.phase.completed":
+      return {
+        ...baseState,
+        orchestration: { ...baseState.orchestration, phase: event.phase, status: event.status === "completed" ? "idle" : event.status },
+        timeline: [...baseState.timeline, orchestrationTimelineItem(event.runId, event.phase, event.summary ?? `${event.phase} ${event.status}`)],
+      };
+
+    case "orchestration.handoff.created":
+      return {
+        ...baseState,
+        orchestration: {
+          ...baseState.orchestration,
+          handoffs: [...baseState.orchestration.handoffs, { fromAgentId: event.fromAgentId, toAgentId: event.toAgentId, ...(event.summary ? { summary: event.summary } : {}), ...(event.artifactPath ? { artifactPath: event.artifactPath } : {}) }],
+        },
+        timeline: [...baseState.timeline, orchestrationTimelineItem(event.runId, `${event.fromAgentId} → ${event.toAgentId}`, event.summary ?? "Handoff created")],
+      };
+
+    case "artifact.updated":
+      return {
+        ...baseState,
+        orchestration: {
+          ...baseState.orchestration,
+          artifacts: {
+            ...baseState.orchestration.artifacts,
+            [event.path]: { path: event.path, ...(event.kind ? { kind: event.kind } : {}), ...(event.agentId ? { agentId: event.agentId } : {}), ...(event.summary ? { summary: event.summary } : {}) },
+          },
+        },
+        timeline: [...baseState.timeline, orchestrationTimelineItem(event.runId, event.kind ?? "artifact", event.summary ?? `Updated ${event.path}`)],
+      };
+
     case "agent.run.completed":
       return { ...baseState, runId: event.runId, isRunning: false, streamingText: "" };
 
     case "agent.error":
       return { ...baseState, runId: event.runId, isRunning: false, streamingText: "", error: event.error };
   }
+}
+
+function orchestrationTimelineItem(runId: string, title: string, summary: string) {
+  return {
+    id: `${runId}:${title}:${summary}`,
+    kind: "verification" as const,
+    title,
+    summary,
+    timestamp: new Date().toISOString(),
+  };
 }
 
 function extractFileChanges(data: unknown, toolUseId: string) {
@@ -269,7 +317,7 @@ function trackAgentLane(state: AgentUiState, event: RuntimeEvent): AgentUiState 
 
 function laneStatusForEvent(event: RuntimeEvent, previous: AgentLaneState["status"]): AgentLaneState["status"] {
   if (event.type === "agent.error") return "failed";
-  if (event.type === "agent.run.completed" || event.type === "tool.completed") return "idle";
-  if (event.type === "agent.run.started" || event.type === "agent.step.started" || event.type === "model.delta" || event.type === "tool.started") return "running";
+  if (event.type === "agent.run.completed" || event.type === "tool.completed" || event.type === "orchestration.phase.completed") return "idle";
+  if (event.type === "agent.run.started" || event.type === "agent.step.started" || event.type === "model.delta" || event.type === "tool.started" || event.type === "orchestration.phase.started") return "running";
   return previous;
 }

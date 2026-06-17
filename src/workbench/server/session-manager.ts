@@ -1,7 +1,7 @@
 import type { RuntimeEvent } from "@/foundation/events/types";
 import { ApprovalManager } from "@/policy/approval-manager";
 import type { ApprovalDecision } from "@/policy/types";
-import type { AgentRuntime } from "@/runtime/agent-runtime";
+import type { AgentRunOptions, RuntimeRunner } from "@/runtime/types";
 
 import { appendRunEvent } from "./run-log";
 import { encodeRuntimeEvent } from "./sse";
@@ -9,7 +9,7 @@ import { encodeRuntimeEvent } from "./sse";
 export interface WorkbenchSession {
   sessionId: string;
   workspace: string;
-  runtime: AgentRuntime;
+  runtime: RuntimeRunner;
   approvalManager: ApprovalManager;
   events: RuntimeEvent[];
   subscribers: Set<ReadableStreamDefaultController<string>>;
@@ -18,6 +18,7 @@ export interface WorkbenchSession {
   currentRunId: string | null;
   createdAt: string;
   updatedAt: string;
+  preset?: string;
 }
 
 export interface SessionSummary {
@@ -27,9 +28,15 @@ export interface SessionSummary {
   status: "idle" | "running";
   createdAt: string;
   updatedAt: string;
+  preset?: string;
 }
 
-export type CreateRuntimeFn = (workspace: string, approvalManager: ApprovalManager) => Promise<AgentRuntime>;
+export interface SessionRunOptions {
+  mode?: AgentRunOptions["mode"];
+  specPath?: string;
+}
+
+export type CreateRuntimeFn = (workspace: string, approvalManager: ApprovalManager, preset?: string) => Promise<RuntimeRunner>;
 
 export class SessionManager {
   private readonly sessions = new Map<string, WorkbenchSession>();
@@ -39,10 +46,10 @@ export class SessionManager {
     this.createRuntime = createRuntime;
   }
 
-  async create(workspace: string): Promise<WorkbenchSession> {
+  async create(workspace: string, preset?: string): Promise<WorkbenchSession> {
     const sessionId = `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
     const approvalManager = new ApprovalManager();
-    const runtime = await this.createRuntime(workspace, approvalManager);
+    const runtime = await this.createRuntime(workspace, approvalManager, preset);
     const now = new Date().toISOString();
     const session: WorkbenchSession = {
       sessionId,
@@ -56,6 +63,7 @@ export class SessionManager {
       currentRunId: null,
       createdAt: now,
       updatedAt: now,
+      ...(preset ? { preset } : {}),
     };
     this.sessions.set(sessionId, session);
     return session;
@@ -66,17 +74,18 @@ export class SessionManager {
   }
 
   list(): SessionSummary[] {
-    return [...this.sessions.values()].map(({ sessionId, workspace, runs, status, createdAt, updatedAt }) => ({
+    return [...this.sessions.values()].map(({ sessionId, workspace, runs, status, createdAt, updatedAt, preset }) => ({
       sessionId,
       workspace,
       runs,
       status,
       createdAt,
       updatedAt,
+      ...(preset ? { preset } : {}),
     }));
   }
 
-  async startRun(sessionId: string, prompt: string): Promise<string> {
+  async startRun(sessionId: string, prompt: string, options: SessionRunOptions = {}): Promise<string> {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`Session not found: ${sessionId}`);
     if (session.status === "running") throw new Error("Session is already running");
@@ -87,13 +96,13 @@ export class SessionManager {
     session.currentRunId = runId;
     session.updatedAt = new Date().toISOString();
 
-    void this.runAsync(session, runId, prompt);
+    void this.runAsync(session, runId, prompt, options);
     return runId;
   }
 
-  private async runAsync(session: WorkbenchSession, runId: string, prompt: string): Promise<void> {
+  private async runAsync(session: WorkbenchSession, runId: string, prompt: string, options: SessionRunOptions): Promise<void> {
     try {
-      for await (const event of session.runtime.run(prompt)) {
+      for await (const event of session.runtime.run(prompt, { runId, mode: options.mode, specPath: options.specPath })) {
         if (session.currentRunId !== runId) break;
         session.events.push(event);
         session.updatedAt = new Date().toISOString();

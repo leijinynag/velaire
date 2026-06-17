@@ -17,6 +17,10 @@ export const runtimeEventTypes = [
   "tool.started",
   "tool.completed",
   "timeline.item.added",
+  "orchestration.phase.started",
+  "orchestration.phase.completed",
+  "orchestration.handoff.created",
+  "artifact.updated",
   "agent.run.completed",
   "agent.error",
 ] as const;
@@ -37,22 +41,28 @@ export interface RuntimeEventMeta {
   agentName?: string;
 }
 
+export type OrchestrationPhaseStatus = "running" | "completed" | "awaiting_approval" | "passed" | "failed" | "aborted";
+
 export type RuntimeEvent =
-  | { type: "agent.run.started"; runId: string; input: string }
+  | ({ type: "agent.run.started"; runId: string; input: string } & RuntimeEventMeta)
   | ({ type: "agent.step.started"; runId: string; step: number } & RuntimeEventMeta)
-  | { type: "model.request.started"; runId: string; step: number; model?: string }
+  | ({ type: "model.request.started"; runId: string; step: number; model?: string } & RuntimeEventMeta)
   | ({ type: "model.delta"; runId: string; step: number; delta: ModelDelta } & RuntimeEventMeta)
-  | { type: "model.message.snapshot"; runId: string; step: number; message: AssistantMessage }
-  | { type: "model.message.completed"; runId: string; step: number; message: AssistantMessage }
+  | ({ type: "model.message.snapshot"; runId: string; step: number; message: AssistantMessage } & RuntimeEventMeta)
+  | ({ type: "model.message.completed"; runId: string; step: number; message: AssistantMessage } & RuntimeEventMeta)
   | ({ type: "tool.requested"; runId: string; step: number; toolUseId: string; toolName: string; input: Record<string, unknown>; capabilities?: ToolCapability[]; risk?: ToolRiskProfile } & RuntimeEventMeta)
   | ({ type: "policy.decision"; runId: string; step: number; toolUseId: string; decision: PolicyDecisionKind; reason: string } & RuntimeEventMeta)
   | ({ type: "approval.requested"; runId: string; step: number; toolUseId: string; toolName?: string; input?: Record<string, unknown>; prompt: string; resolve?: (decision: ApprovalDecision) => void } & RuntimeEventMeta)
   | ({ type: "approval.resolved"; runId: string; step: number; toolUseId: string; approved: boolean } & RuntimeEventMeta)
   | ({ type: "tool.started"; runId: string; step: number; toolUseId: string; toolName: string } & RuntimeEventMeta)
   | ({ type: "tool.completed"; runId: string; step: number; toolUseId: string; toolName: string; result: ToolExecutionResult } & RuntimeEventMeta)
-  | { type: "timeline.item.added"; runId: string; item: TimelineItem }
-  | { type: "agent.run.completed"; runId: string }
-  | { type: "agent.error"; runId: string; error: AgentError };
+  | ({ type: "timeline.item.added"; runId: string; item: TimelineItem } & RuntimeEventMeta)
+  | ({ type: "orchestration.phase.started"; runId: string; phase: string; summary?: string } & RuntimeEventMeta)
+  | ({ type: "orchestration.phase.completed"; runId: string; phase: string; status: OrchestrationPhaseStatus; summary?: string } & RuntimeEventMeta)
+  | ({ type: "orchestration.handoff.created"; runId: string; fromAgentId: string; toAgentId: string; summary?: string; artifactPath?: string } & RuntimeEventMeta)
+  | ({ type: "artifact.updated"; runId: string; path: string; kind?: string; summary?: string } & RuntimeEventMeta)
+  | ({ type: "agent.run.completed"; runId: string } & RuntimeEventMeta)
+  | ({ type: "agent.error"; runId: string; error: AgentError } & RuntimeEventMeta);
 
 export interface TimelineItem {
   id: string;

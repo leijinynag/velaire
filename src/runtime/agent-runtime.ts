@@ -1,5 +1,5 @@
 import { Model } from "@/foundation";
-import type { RuntimeEvent } from "@/foundation/events/types";
+import type { RuntimeEvent, RuntimeEventMeta } from "@/foundation/events/types";
 import type { AssistantMessage, NonSystemMessage, ToolMessage, ToolUseContentBlock, UserMessage } from "@/foundation/messages/types";
 import type { ModelStreamEvent, ProviderInvokeParams } from "@/providers/types";
 import type { ToolExecutionResult } from "@/tools/types";
@@ -9,12 +9,12 @@ import { createRunId } from "./session";
 import { streamToolCallExecution } from "./tool-executor";
 import { formatToolResultForMessage } from "./tool-result-runtime";
 import { RuntimeTranscript } from "./transcript";
-import type { AgentRunOptions, AgentRuntimeOptions } from "./types";
+import type { AgentRunOptions, AgentRuntimeOptions, RuntimeRunner } from "./types";
 
 /**
  * Agent 运行时类，负责编排 Agent 的主循环：接收用户输入、调用模型、执行工具、触发中间件回调等。
  */
-export class AgentRuntime {
+export class AgentRuntime implements RuntimeRunner {
   /** 内部使用的模型实例 */
   private readonly model: Model<Record<string, unknown>>;
   /** 系统提示词 */
@@ -62,11 +62,12 @@ export class AgentRuntime {
    * @param input - 用户输入文本
    */
   async *run(input: string, options: AgentRunOptions = {}): AsyncIterable<RuntimeEvent> {
-    const runId = createRunId();
+    const runId = options.runId ?? createRunId();
+    const eventMeta = createEventMeta(options);
     this.abortController = new AbortController();
     const userMessage: UserMessage = { role: "user", content: [{ type: "text", text: input }] };
     this.transcript.append(userMessage);
-    yield { type: "agent.run.started", runId, input };
+    yield withEventMeta({ type: "agent.run.started", runId, input }, eventMeta);
 
     try {
       this.agentContext.requestedSkillName = options.requestedSkillName ?? null;
@@ -75,14 +76,14 @@ export class AgentRuntime {
       for (let step = 1; step <= this.maxSteps; step++) {
         this.abortController.signal.throwIfAborted();
         await this.runAgentContextHook("beforeAgentStep", step);
-        yield { type: "agent.step.started", runId, step };
-        yield { type: "model.request.started", runId, step, model: this.model.name };
+        yield withEventMeta({ type: "agent.step.started", runId, step }, eventMeta);
+        yield withEventMeta({ type: "model.request.started", runId, step, model: this.model.name }, eventMeta);
 
         const collected: { message?: AssistantMessage } = {};
         for await (const event of this.collectAssistantMessage(runId, step, (message) => {
           collected.message = message;
         })) {
-          yield event;
+          yield withEventMeta(event, eventMeta);
         }
         const assistantMessage = collected.message;
         if (!assistantMessage) throw new Error("Model stream completed without an assistant message");
@@ -92,23 +93,25 @@ export class AgentRuntime {
           const result = await middleware.afterModel?.({ transcript: { messages: this.messages }, message: assistantMessage, agentContext: this.agentContext });
           if (result) Object.assign(assistantMessage, result);
         }
-        yield { type: "model.message.completed", runId, step, message: assistantMessage };
+        yield withEventMeta({ type: "model.message.completed", runId, step, message: assistantMessage }, eventMeta);
 
         // 提取 assistant 消息中的工具调用
         const toolUses = assistantMessage.content.filter((content): content is ToolUseContentBlock => content.type === "tool_use");
         if (toolUses.length === 0) {
           // 没有工具调用，运行结束
           await this.runAgentContextHook("afterAgentRun");
-          yield { type: "agent.run.completed", runId };
+          yield withEventMeta({ type: "agent.run.completed", runId }, eventMeta);
           return;
         }
 
         // 执行工具调用并产出相关事件
-        yield* this.executeToolUses(runId, step, toolUses);
+        for await (const event of this.executeToolUses(runId, step, toolUses)) {
+          yield withEventMeta(event, eventMeta);
+        }
         await this.runAgentContextHook("afterAgentStep", step);
       }
 
-      yield { type: "agent.error", runId, error: { code: "MAX_STEPS_REACHED", message: "Maximum number of agent steps reached" } };
+      yield withEventMeta({ type: "agent.error", runId, error: { code: "MAX_STEPS_REACHED", message: "Maximum number of agent steps reached" } }, eventMeta);
     } finally {
       this.agentContext.requestedSkillName = null;
       this.agentContext.planMode = false;
@@ -291,4 +294,16 @@ export class AgentRuntime {
     }
     return [];
   }
+}
+
+function createEventMeta(options: AgentRunOptions): Pick<RuntimeEventMeta, "agentId" | "agentName"> {
+  return {
+    ...(options.agentId ? { agentId: options.agentId } : {}),
+    ...(options.agentName ? { agentName: options.agentName } : {}),
+  };
+}
+
+function withEventMeta<TEvent extends RuntimeEvent>(event: TEvent, meta: Pick<RuntimeEventMeta, "agentId" | "agentName">): TEvent {
+  if (!meta.agentId && !meta.agentName) return event;
+  return { ...event, ...meta } as TEvent;
 }

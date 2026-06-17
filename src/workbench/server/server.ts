@@ -34,6 +34,8 @@ interface CreateSessionBody {
 
 interface CreateRunBody {
   prompt?: string;
+  mode?: "normal" | "plan" | "multi-agent";
+  specPath?: string;
 }
 
 interface ApprovalBody {
@@ -60,7 +62,7 @@ export function createWorkbenchServer(options: CreateWorkbenchServerOptions): Re
         cwd: options.cwd,
         demo: options.demo,
         sessionManager,
-        presets: ["coding", "research-lite"],
+        presets: ["coding", "coding-multi-agent", "research-lite"],
         runAgent: options.runAgent,
       });
     },
@@ -161,8 +163,8 @@ async function createSession(request: Request, context: WorkbenchRequestContext 
   const resolvedWorkspace = await resolveWorkspacePath(rawWorkspace, cwd);
   if (!resolvedWorkspace.ok) return json({ error: resolvedWorkspace.error }, 400);
   try {
-    const session = await sessionManager.create(resolvedWorkspace.path);
-    return json({ sessionId: session.sessionId, workspace: session.workspace });
+    const session = await sessionManager.create(resolvedWorkspace.path, body.preset);
+    return json({ sessionId: session.sessionId, workspace: session.workspace, preset: session.preset });
   } catch (err) {
     return json({ error: err instanceof Error ? err.message : "Failed to create session" }, 500);
   }
@@ -201,8 +203,8 @@ async function resolveWorkspacePath(input: string, cwd: string): Promise<Workspa
 function getSession(sessionId: string, sessionManager: SessionManager): Response {
   const session = sessionManager.get(sessionId);
   if (!session) return json({ error: "Session not found" }, 404);
-  const { sessionId: sid, workspace, runs, status, createdAt, updatedAt } = session;
-  return json({ sessionId: sid, workspace, runs, status, createdAt, updatedAt });
+  const { sessionId: sid, workspace, runs, status, createdAt, updatedAt, preset } = session;
+  return json({ sessionId: sid, workspace, runs, status, createdAt, updatedAt, preset });
 }
 
 function streamSessionEvents(sessionId: string, sessionManager: SessionManager, afterIndex: number): Response {
@@ -229,7 +231,7 @@ async function createSessionRun(request: Request, sessionId: string, context: Wo
   const prompt = body.prompt?.trim();
   if (!prompt) return json({ error: "prompt is required" }, 400);
   try {
-    const runId = await sessionManager.startRun(sessionId, prompt);
+    const runId = await sessionManager.startRun(sessionId, prompt, { mode: body.mode, specPath: body.specPath });
     return json({ runId });
   } catch (err) {
     return json({ error: err instanceof Error ? err.message : "Failed to start run" }, 500);

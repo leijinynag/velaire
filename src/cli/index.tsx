@@ -20,6 +20,7 @@ import { MockModelProvider } from "@/providers/mock/provider";
 import { ProviderRegistry } from "@/providers/registry";
 import type { ModelProvider } from "@/providers/types";
 import { AgentRuntime } from "@/runtime/agent-runtime";
+import type { RuntimeRunner } from "@/runtime/types";
 import { createWorkbenchServer } from "@/workbench/server";
 import { createDemoEvents, createDemoRunId } from "@/workbench/server/demo-events";
 
@@ -98,8 +99,8 @@ async function startWorkbench(options: { port: string; provider?: string; worksp
     cwd: defaultWorkspace,
     port: Number.isFinite(port) ? port : 4321,
     demo,
-    createRuntime: demo ? undefined : async (workspace, approvalManager) => {
-      return createRuntimeFromConfig(config, { provider: options.provider }, { approvalManager, cwd: workspace });
+    createRuntime: demo ? undefined : async (workspace, approvalManager, preset) => {
+      return createRuntimeFromConfig(config, { provider: options.provider, preset }, { approvalManager, cwd: workspace });
     },
     ...(demo ? { runAgent: (prompt) => {
       const runId = createDemoRunId();
@@ -171,7 +172,7 @@ export async function createRuntimeFromConfig(
   config: VelaireConfig,
   options: Pick<RunCommandOptions, "provider" | "preset" | "modelName">,
   runtimeOptions: { approvalManager?: Pick<ApprovalManager, "requestApproval">; cwd?: string } = {},
-): Promise<AgentRuntime> {
+): Promise<RuntimeRunner> {
   const resolved = resolveRunConfiguration(options, config);
   const provider = createProvider(resolved.providerName, resolved.modelEntry);
   const preset = presetRegistry.get(resolved.presetName);
