@@ -67,7 +67,7 @@ export interface AgentHandoffState {
 
 export interface AgentOrchestrationState {
   phase: string | null;
-  status: "idle" | "running" | "awaiting_approval" | "passed" | "failed" | "aborted";
+  status: "idle" | "running" | "awaiting_clarification" | "awaiting_approval" | "passed" | "failed" | "aborted";
   artifacts: Record<string, AgentArtifactState>;
   handoffs: AgentHandoffState[];
 }

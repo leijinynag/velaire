@@ -41,7 +41,7 @@ export interface RuntimeEventMeta {
   agentName?: string;
 }
 
-export type OrchestrationPhaseStatus = "running" | "completed" | "awaiting_approval" | "passed" | "failed" | "aborted";
+export type OrchestrationPhaseStatus = "running" | "completed" | "awaiting_clarification" | "awaiting_approval" | "passed" | "failed" | "aborted";
 
 export type RuntimeEvent =
   | ({ type: "agent.run.started"; runId: string; input: string } & RuntimeEventMeta)

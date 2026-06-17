@@ -11,6 +11,7 @@ import { createCodingToolSystem } from "@/tools/coding";
 import { ToolRegistry } from "@/tools/registry";
 import { bashTool } from "@/tools/shell";
 import { createAskUserQuestionTool } from "@/tools/user-interaction";
+import type { AskUserQuestionParameters, AskUserQuestionResult } from "@/tools/user-interaction";
 import { fileInfoTool, globSearchTool, grepSearchTool, listFilesTool, readFileTool } from "@/tools/workspace";
 
 import { createCodingRunArtifacts, ensureCodingRunArtifacts, writeStateArtifact } from "./artifacts";
@@ -45,6 +46,10 @@ export class CodingOrchestratorRuntime implements RuntimeRunner {
   private readonly maxIterations: number;
   private activeRuntime: AgentRuntime | null = null;
   private lastSpecPath: string | null = null;
+  private plannerRuntime: AgentRuntime | null = null;
+  private plannerRunId: string | null = null;
+  private plannerArtifacts: CodingRunArtifacts | null = null;
+  private pendingClarification: { params: AskUserQuestionParameters; resolve: (result: AskUserQuestionResult) => void } | null = null;
 
   constructor(options: CodingOrchestratorRuntimeOptions) {
     this.provider = options.provider;
@@ -64,6 +69,10 @@ export class CodingOrchestratorRuntime implements RuntimeRunner {
     this.messages.push({ role: "user", content: [{ type: "text", text: input }] });
 
     const mode = options.mode ?? "plan";
+    if (mode === "plan" && this.pendingClarification && this.plannerRuntime && this.plannerArtifacts && this.plannerRunId) {
+      yield* this.continuePlanner(runId, input);
+      return;
+    }
     if (mode === "multi-agent" && (options.specPath || this.lastSpecPath)) {
       yield* this.runImplementationLoop(runId, input, artifacts, options.specPath ?? this.lastSpecPath!);
       return;
@@ -84,6 +93,9 @@ export class CodingOrchestratorRuntime implements RuntimeRunner {
     let specFinalized = false;
     const planner = this.createPlannerRuntime(artifacts, () => { specFinalized = true; });
     this.activeRuntime = planner;
+    this.plannerRuntime = planner;
+    this.plannerRunId = runId;
+    this.plannerArtifacts = artifacts;
 
     yield { type: "orchestration.phase.started", runId, phase: "planning", summary: "Planner is clarifying requirements and drafting spec.md", agentId: PLANNER.id, agentName: PLANNER.name };
     for await (const event of planner.run(input, { runId, agentId: PLANNER.id, agentName: PLANNER.name, mode: "plan" })) {
@@ -94,6 +106,13 @@ export class CodingOrchestratorRuntime implements RuntimeRunner {
       }
     }
 
+    if (this.pendingClarification) {
+      await writeStateArtifact(artifacts, { phase: "planning", iteration: 0 });
+      yield { type: "orchestration.phase.completed", runId, phase: "planning", status: "awaiting_clarification", summary: "Planner is waiting for clarification before writing spec.md", agentId: PLANNER.id, agentName: PLANNER.name };
+      this.activeRuntime = null;
+      return;
+    }
+
     await writeStateArtifact(artifacts, { phase: specFinalized ? "awaiting_spec_approval" : "failed", iteration: 0 });
     if (specFinalized) {
       yield { type: "orchestration.phase.completed", runId, phase: "planning", status: "awaiting_approval", summary: `Spec ready at ${artifacts.specPath}`, agentId: PLANNER.id, agentName: PLANNER.name };
@@ -102,6 +121,39 @@ export class CodingOrchestratorRuntime implements RuntimeRunner {
       yield { type: "orchestration.phase.completed", runId, phase: "planning", status: "failed", summary: "Planner ended without finalizing spec.md", agentId: PLANNER.id, agentName: PLANNER.name };
     }
     this.activeRuntime = null;
+  }
+
+  private async *continuePlanner(runId: string, input: string): AsyncIterable<RuntimeEvent> {
+    const pending = this.pendingClarification;
+    const planner = this.plannerRuntime;
+    const artifacts = this.plannerArtifacts;
+    if (!pending || !planner || !artifacts) return;
+
+    const answer = answerClarification(pending.params, input);
+    this.pendingClarification = null;
+    pending.resolve(answer);
+
+    let specFinalized = false;
+    yield { type: "orchestration.phase.started", runId, phase: "planning", summary: "Planner is incorporating clarification", agentId: PLANNER.id, agentName: PLANNER.name };
+    for await (const event of planner.run(`User clarification: ${input}`, { runId, agentId: PLANNER.id, agentName: PLANNER.name, mode: "plan" })) {
+      yield event;
+      if (event.type === "tool.completed" && event.toolName === "finalize_spec" && event.result.ok) {
+        specFinalized = true;
+        this.lastSpecPath = artifacts.specPath;
+        yield { type: "artifact.updated", runId, path: artifacts.specPath, kind: "spec", summary: "spec.md finalized", agentId: PLANNER.id, agentName: PLANNER.name };
+      }
+    }
+
+    if (this.pendingClarification) {
+      yield { type: "orchestration.phase.completed", runId, phase: "planning", status: "awaiting_clarification", summary: "Planner is waiting for another clarification", agentId: PLANNER.id, agentName: PLANNER.name };
+      return;
+    }
+
+    await writeStateArtifact(artifacts, { phase: specFinalized ? "awaiting_spec_approval" : "failed", iteration: 0 });
+    if (specFinalized) {
+      yield { type: "orchestration.phase.completed", runId, phase: "planning", status: "awaiting_approval", summary: `Spec ready at ${artifacts.specPath}`, agentId: PLANNER.id, agentName: PLANNER.name };
+      yield this.assistantMessage(runId, `Spec ready: ${artifacts.specPath}\n\nReview it, then approve the spec to start the Generator/Evaluator loop.`);
+    }
   }
 
   private async *runImplementationLoop(runId: string, input: string, artifacts: CodingRunArtifacts, specPath: string): AsyncIterable<RuntimeEvent> {
@@ -154,7 +206,7 @@ export class CodingOrchestratorRuntime implements RuntimeRunner {
 
   private createPlannerRuntime(artifacts: CodingRunArtifacts, onFinalized: () => void): AgentRuntime {
     const registry = new ToolRegistry();
-    for (const tool of [readFileTool, listFilesTool, globSearchTool, grepSearchTool, fileInfoTool, createAskUserQuestionTool(), createFinalizeSpecTool(artifacts, onFinalized)]) {
+    for (const tool of [readFileTool, listFilesTool, globSearchTool, grepSearchTool, fileInfoTool, createAskUserQuestionTool((params) => this.captureClarification(params)), createFinalizeSpecTool(artifacts, onFinalized)]) {
       registry.register(tool);
     }
     return this.createChildRuntime(createPlannerPrompt(this.cwd), registry, []);
@@ -173,6 +225,12 @@ export class CodingOrchestratorRuntime implements RuntimeRunner {
       registry.register(tool);
     }
     return this.createChildRuntime(createEvaluatorPrompt(this.cwd, artifacts), registry, []);
+  }
+
+  private async captureClarification(params: AskUserQuestionParameters): Promise<AskUserQuestionResult> {
+    return new Promise((resolve) => {
+      this.pendingClarification = { params, resolve };
+    });
   }
 
   private createChildRuntime(systemPrompt: string, tools: ToolRegistry, middleware: AgentMiddleware[]): AgentRuntime {
@@ -194,4 +252,18 @@ export class CodingOrchestratorRuntime implements RuntimeRunner {
     this.messages.push(message);
     return { type: "model.message.completed", runId, step: 0, message };
   }
+}
+
+function answerClarification(params: AskUserQuestionParameters, input: string): AskUserQuestionResult {
+  const normalized = input.toLowerCase();
+  return {
+    answers: params.questions.map((question, questionIndex) => {
+      const matched = question.options.filter((option) => normalized.includes(option.label.toLowerCase()));
+      const selected = matched.length > 0 ? matched : [question.options[0]!];
+      return {
+        question_index: questionIndex,
+        selected_labels: question.multi_select ? selected.map((option) => option.label) : [selected[0]!.label],
+      };
+    }),
+  };
 }
