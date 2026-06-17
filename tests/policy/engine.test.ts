@@ -50,4 +50,8 @@ describe("policy engine", () => {
     expect(evaluatePolicy(request({ toolName: "bash" }), { allow: ["bash"], deny: [] }).decision).toBe("allow");
     expect(evaluatePolicy(request({ toolName: "bash" }), { allow: [], deny: ["bash"] }).decision).toBe("deny");
   });
+
+  test("allows artifact writes as low-risk host-managed artifacts", () => {
+    expect(evaluatePolicy(request({ toolName: "finalize_spec", capabilities: ["planning", "artifact.write"] })).decision).toBe("allow");
+  });
 });

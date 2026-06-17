@@ -12,6 +12,7 @@ import { ApprovalManager } from "@/policy/approval-manager";
 import { loadProjectAllowList, persistAllowedTool } from "@/policy/persistence";
 import type { PolicyProfile } from "@/policy/types";
 import { codingPreset } from "@/presets/coding";
+import { codingMultiAgentPreset, createCodingOrchestratorRuntime } from "@/presets/coding/create-coding-orchestrator-runtime";
 import { loadAgentsGuidanceMessage } from "@/presets/coding/context";
 import { PresetRegistry } from "@/presets/registry";
 import { researchLitePreset } from "@/presets/research-lite";
@@ -27,6 +28,7 @@ import { createDemoEvents, createDemoRunId } from "@/workbench/server/demo-event
 export const presetRegistry = new PresetRegistry();
 presetRegistry.register(researchLitePreset);
 presetRegistry.register(codingPreset);
+presetRegistry.register(codingMultiAgentPreset);
 
 export type RunCommandOptions = {
   provider?: string;
@@ -177,6 +179,16 @@ export async function createRuntimeFromConfig(
   const provider = createProvider(resolved.providerName, resolved.modelEntry);
   const preset = presetRegistry.get(resolved.presetName);
   const cwd = runtimeOptions.cwd ?? process.cwd();
+  const modelName = resolved.modelEntry?.model ?? resolved.providerName;
+  if (resolved.presetName === codingMultiAgentPreset.name) {
+    return createCodingOrchestratorRuntime({
+      provider,
+      modelName,
+      cwd,
+      policyProfile: resolved.policyProfile,
+      askUser: runtimeOptions.approvalManager?.requestApproval.bind(runtimeOptions.approvalManager),
+    });
+  }
   const runtime = new AgentRuntime({
     provider,
     systemPrompt: await preset.createSystemPrompt({ cwd }),
@@ -186,7 +198,7 @@ export async function createRuntimeFromConfig(
     middleware: preset.createMiddleware?.() ?? [],
     askUser: runtimeOptions.approvalManager?.requestApproval.bind(runtimeOptions.approvalManager),
     approvalPersistence: { loadAllowList: loadProjectAllowList, persistAllowedTool },
-    modelName: resolved.modelEntry?.model ?? resolved.providerName,
+    modelName,
   });
   if (resolved.presetName === codingPreset.name) {
     const agentsMessage = await loadAgentsGuidanceMessage(cwd);
