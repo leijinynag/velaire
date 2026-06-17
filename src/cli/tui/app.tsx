@@ -98,7 +98,7 @@ export async function handleSubmittedText(submission: PromptSubmission | string,
   }
 
   const runMode = requestedSkillName === "coding-plan" ? "plan" : mode;
-  const isMultiAgentRuntime = runtime.modelName === "coding-multi-agent";
+  const isMultiAgentRuntime = runtime.modelName.startsWith("coding-multi-agent");
   // coding-plan skill 继续触发只读 planMode；TUI mode 额外传给 multi-agent orchestrator。
   await submitPromptToRuntime(text, runtime, applyEvent, { requestedSkillName, planMode: runMode === "plan" && !isMultiAgentRuntime, mode: runMode });
 }

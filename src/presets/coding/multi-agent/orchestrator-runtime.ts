@@ -37,6 +37,7 @@ export class CodingOrchestratorRuntime implements RuntimeRunner {
   readonly messages: NonSystemMessage[] = [];
 
   private readonly provider: ModelProvider;
+  private readonly providerModelName: string;
   private readonly cwd: string;
   private readonly policyProfile: PolicyProfile;
   private readonly askUser: CodingOrchestratorRuntimeOptions["askUser"];
@@ -47,7 +48,8 @@ export class CodingOrchestratorRuntime implements RuntimeRunner {
 
   constructor(options: CodingOrchestratorRuntimeOptions) {
     this.provider = options.provider;
-    this.modelName = "coding-multi-agent";
+    this.providerModelName = options.modelName;
+    this.modelName = `coding-multi-agent (${options.modelName})`;
     this.cwd = options.cwd;
     this.policyProfile = options.policyProfile;
     this.askUser = options.askUser;
@@ -175,7 +177,7 @@ export class CodingOrchestratorRuntime implements RuntimeRunner {
 
   private createChildRuntime(systemPrompt: string, tools: ToolRegistry, middleware: AgentMiddleware[]): AgentRuntime {
     return new AgentRuntime({
-      model: new Model(this.modelName, this.provider, { model: this.modelName }),
+      model: new Model(this.providerModelName, this.provider, { model: this.providerModelName }),
       systemPrompt,
       tools,
       cwd: this.cwd,
@@ -183,7 +185,7 @@ export class CodingOrchestratorRuntime implements RuntimeRunner {
       middleware,
       askUser: this.askUser,
       approvalPersistence: this.approvalPersistence,
-      modelName: this.modelName,
+      modelName: this.providerModelName,
     });
   }
 
