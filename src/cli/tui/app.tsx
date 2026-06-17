@@ -6,6 +6,7 @@ import type { ApprovalManager } from "@/policy/approval-manager";
 import type { RuntimeRunner } from "@/runtime/types";
 
 import { BUILTIN_COMMANDS, formatHelp, resolveBuiltinCommand, type PromptSubmission, type SlashCommand } from "./command-registry";
+import { AgentLanes } from "./components/agent-lanes";
 import { ApprovalPrompt } from "./components/approval-prompt";
 import { Footer } from "./components/footer";
 import { Header } from "./components/header";
@@ -13,12 +14,14 @@ import { InputBox } from "./components/input-box";
 import { MessageHistory } from "./components/message-history";
 import { StreamingIndicator } from "./components/streaming-indicator";
 import { useRuntimeEvents } from "./hooks/use-runtime-events";
+import type { CodingInteractionMode } from "./interaction-mode";
 import { buildTodoViewState, getNextTodo } from "./todo-view";
 
 export function App({ approvalManager, commands = BUILTIN_COMMANDS, runtime }: { approvalManager?: ApprovalManager; commands?: SlashCommand[]; runtime?: RuntimeRunner }) {
   const { state, viewModel, applyEvent } = useRuntimeEvents({ modelName: runtime?.modelName });
   const todoView = useMemo(() => buildTodoViewState(viewModel.messages), [viewModel.messages]);
   const [approvalRequest, setApprovalRequest] = useState(() => approvalManager?.currentRequest ?? null);
+  const [mode, setMode] = useState<CodingInteractionMode>("normal");
 
   useEffect(() => {
     return approvalManager?.subscribe(setApprovalRequest);
@@ -26,21 +29,22 @@ export function App({ approvalManager, commands = BUILTIN_COMMANDS, runtime }: {
 
   const handleSubmit = useCallback((submission: PromptSubmission) => {
     if (!canSubmitPrompt({ hasPendingApproval: !!approvalRequest, streaming: viewModel.streaming })) return;
-    void handleSubmittedText(submission, runtime, applyEvent, commands);
-  }, [applyEvent, approvalRequest, commands, runtime, viewModel.streaming]);
+    void handleSubmittedText(submission, runtime, applyEvent, commands, mode);
+  }, [applyEvent, approvalRequest, commands, mode, runtime, viewModel.streaming]);
 
   return (
     <Box flexDirection="column" width="100%">
       {state.messages.length === 0 ? <Header modelName={viewModel.modelName} /> : null}
+      <AgentLanes agents={state.agents} />
       <MessageHistory messages={viewModel.messages} todoSnapshots={todoView.todoSnapshots} />
       {approvalRequest ? (
         <ApprovalPrompt request={approvalRequest} supportProjectWideAllow onDecision={(decision) => approvalManager?.respond(decision)} />
       ) : null}
       {viewModel.errorText ? <Box paddingX={2}><Text color="red">Provider error: {viewModel.errorText}</Text></Box> : null}
       <StreamingIndicator streaming={viewModel.streaming} nextTodo={getNextTodo(todoView.latestTodos)?.content} />
-      <InputBox commands={commands} isActive={isInputActive({ hasPendingApproval: !!approvalRequest, streaming: viewModel.streaming })} onSubmit={handleSubmit} onAbort={() => runtime?.abort()} />
+      <InputBox commands={commands} isActive={isInputActive({ hasPendingApproval: !!approvalRequest, streaming: viewModel.streaming })} mode={mode} onModeChange={setMode} onSubmit={handleSubmit} onAbort={() => runtime?.abort()} />
       {todoView.latestTodos ? null : null}
-      <Footer modelName={viewModel.modelName} tokenUsage={viewModel.tokenUsage} />
+      <Footer mode={mode} modelName={viewModel.modelName} tokenUsage={viewModel.tokenUsage} />
     </Box>
   );
 }
@@ -53,7 +57,7 @@ export function canSubmitPrompt(state: { hasPendingApproval: boolean; streaming:
   return isInputActive(state);
 }
 
-export async function handleSubmittedText(submission: PromptSubmission | string, runtime: RuntimeRunner | undefined, applyEvent: (event: RuntimeEvent) => void, commands: SlashCommand[] = BUILTIN_COMMANDS): Promise<void> {
+export async function handleSubmittedText(submission: PromptSubmission | string, runtime: RuntimeRunner | undefined, applyEvent: (event: RuntimeEvent) => void, commands: SlashCommand[] = BUILTIN_COMMANDS, mode: CodingInteractionMode = "normal"): Promise<void> {
   const text = typeof submission === "string" ? submission : submission.text;
   const requestedSkillName = typeof submission === "string" ? null : submission.requestedSkillName;
   const command = resolveBuiltinCommand(text);
@@ -92,11 +96,12 @@ export async function handleSubmittedText(submission: PromptSubmission | string,
     return;
   }
 
-  // coding-plan skill 触发 planMode，让 prompt 和 policy 同时进入只读规划状态。
-  await submitPromptToRuntime(text, runtime, applyEvent, { requestedSkillName, planMode: requestedSkillName === "coding-plan" });
+  const runMode = requestedSkillName === "coding-plan" ? "plan" : mode;
+  // coding-plan skill 继续触发只读 planMode；TUI mode 额外传给 multi-agent orchestrator。
+  await submitPromptToRuntime(text, runtime, applyEvent, { requestedSkillName, planMode: runMode === "plan", mode: runMode });
 }
 
-export async function submitPromptToRuntime(text: string, runtime: RuntimeRunner, applyEvent: (event: RuntimeEvent) => void, options: { requestedSkillName?: string | null; planMode?: boolean } = {}): Promise<void> {
+export async function submitPromptToRuntime(text: string, runtime: RuntimeRunner, applyEvent: (event: RuntimeEvent) => void, options: { requestedSkillName?: string | null; planMode?: boolean; mode?: CodingInteractionMode } = {}): Promise<void> {
   try {
     // TUI 只消费 RuntimeEvent，保持和 provider 原始流解耦。
     for await (const event of runtime.run(text, options)) {

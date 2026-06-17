@@ -1,6 +1,9 @@
 import { useInput } from "ink";
 import { useEffect, useMemo, useState } from "react";
 
+import type { CodingInteractionMode } from "../interaction-mode";
+import { nextCodingInteractionMode } from "../interaction-mode";
+
 import {
   buildPromptSubmission,
   filterCommands,
@@ -38,11 +41,15 @@ export function useCommandInput({
   isActive = true,
   onSubmit,
   onAbort,
+  mode = "normal",
+  onModeChange,
 }: {
   commands: SlashCommand[];
   isActive?: boolean;
   onSubmit?: (submission: PromptSubmission) => void;
   onAbort?: () => void;
+  mode?: CodingInteractionMode;
+  onModeChange?: (mode: CodingInteractionMode) => void;
 }) {
   const [firstMessage, setFirstMessage] = useState(true);
   const [editorState, setEditorState] = useState<InputEditorState>({ text: "", cursorOffset: 0 });
@@ -94,6 +101,11 @@ export function useCommandInput({
     (input, key) => {
       if (key.ctrl && input === "c") {
         onAbort?.();
+        return;
+      }
+
+      if (isShiftTab(input, key)) {
+        onModeChange?.(nextCodingInteractionMode(mode));
         return;
       }
 
@@ -178,9 +190,19 @@ export function useCommandInput({
     filteredCommands,
     highlightedCommandName,
     pickerOpen,
-    placeholder: firstMessage ? welcomeMessage : "Input anything to continue. Launch a new command or skill by typing `/`",
+    placeholder: placeholderForMode(mode, firstMessage ? welcomeMessage : undefined),
     selectedIndex,
     text: editorState.text,
     cursorOffset: editorState.cursorOffset,
   };
+}
+
+function placeholderForMode(mode: CodingInteractionMode, welcomeMessage?: string): string {
+  if (mode === "plan") return "Plan mode: clarify requirements and produce spec.md";
+  if (mode === "multi-agent") return "Multi-agent: planner/generator/evaluator harness";
+  return welcomeMessage ?? "Input anything to continue. Launch a new command or skill by typing `/`";
+}
+
+function isShiftTab(input: string, key: { shift?: boolean; tab?: boolean }): boolean {
+  return (key.shift && key.tab) || input === "[Z";
 }

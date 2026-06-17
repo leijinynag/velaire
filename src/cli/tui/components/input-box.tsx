@@ -1,6 +1,8 @@
 import { Box, Text } from "ink";
 
 import type { PromptSubmission, SlashCommand } from "../command-registry";
+import type { CodingInteractionMode } from "../interaction-mode";
+import { modeGlyph, modeLabel } from "../interaction-mode";
 import { useCommandInput } from "../hooks/use-command-input";
 import { currentTheme } from "../themes";
 
@@ -12,11 +14,15 @@ export function InputBox({
   isActive = true,
   onSubmit,
   onAbort,
+  mode = "normal",
+  onModeChange,
 }: {
   commands: SlashCommand[];
   isActive?: boolean;
   onSubmit?: (submission: PromptSubmission) => void;
   onAbort?: () => void;
+  mode?: CodingInteractionMode;
+  onModeChange?: (mode: CodingInteractionMode) => void;
 }) {
   const { filteredCommands, highlightedCommandName, pickerOpen, placeholder, selectedIndex, text, cursorOffset } =
     useCommandInput({
@@ -24,6 +30,8 @@ export function InputBox({
       isActive,
       onSubmit,
       onAbort,
+      mode,
+      onModeChange,
     });
 
   return (
@@ -36,7 +44,8 @@ export function InputBox({
         borderColor={currentTheme.colors.borderColor}
         columnGap={1}
       >
-        <Text>❯</Text>
+        <Text color={currentTheme.colors.primary}>{modeGlyph(mode)}</Text>
+        <Text color={currentTheme.colors.dimText}>{modeLabel(mode)}</Text>
         <HighlightedInput
           cursorOffset={cursorOffset}
           highlightedCommandName={highlightedCommandName}
