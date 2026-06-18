@@ -15,7 +15,7 @@ The reducer/view-model boundary is the main testing surface.
 Velaire exposes two interaction surfaces:
 
 - Ink TUI for keyboard-first terminal workflows.
-- React Workbench for visual debugging, run replay, tool inspection, code diffs, and future multi-agent lanes.
+- React Workbench for visual debugging, run replay, tool inspection, code diffs, and multi-agent coding harness lanes.
 
 Both UIs consume `RuntimeEvent` through `src/ui-state`. The TUI adds terminal-specific view models; the Workbench adds browser layout and inspector selection state.
 
@@ -50,7 +50,7 @@ A complete TUI should include:
 - input box
 - footer with token usage, step count, tool count, and status
 
-The Web Workbench should include conversation, agent lanes, timeline, tool inspector, policy panel, transcript viewer, metrics, and code diff visualization.
+The Web Workbench should include conversation, agent lanes, orchestration artifacts, timeline, tool inspector, policy panel, transcript viewer, metrics, and code diff visualization.
 
 ## Slash commands
 

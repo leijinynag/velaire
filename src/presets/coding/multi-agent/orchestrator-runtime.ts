@@ -16,7 +16,7 @@ import { fileInfoTool, globSearchTool, grepSearchTool, listFilesTool, readFileTo
 
 import { createCodingRunArtifacts, ensureCodingRunArtifacts, writeStateArtifact } from "./artifacts";
 import { createEvaluatorPrompt, createGeneratorPrompt, createPlannerPrompt } from "./prompts";
-import { createFinalizeSpecTool, createSubmitEvaluationTool, createSubmitGeneratorNotesTool } from "./tools";
+import { createFinalizeSpecTool, createFinalizeTaskPlanTool, createSubmitEvaluationTool, createSubmitGeneratorNotesTool } from "./tools";
 import type { CodingOrchestratorPhase, CodingRunArtifacts, EvaluationReport } from "./types";
 
 const PLANNER = { id: "planner", name: "Planner" } as const;
@@ -116,7 +116,7 @@ export class CodingOrchestratorRuntime implements RuntimeRunner {
     await writeStateArtifact(artifacts, { phase: specFinalized ? "awaiting_spec_approval" : "failed", iteration: 0 });
     if (specFinalized) {
       yield { type: "orchestration.phase.completed", runId, phase: "planning", status: "awaiting_approval", summary: `Spec ready at ${artifacts.specPath}`, agentId: PLANNER.id, agentName: PLANNER.name };
-      yield this.assistantMessage(runId, `Spec ready: ${artifacts.specPath}\n\nReview it, then approve the spec to start the Generator/Evaluator loop.`);
+      yield this.assistantMessage(runId, `Spec ready: ${artifacts.specPath}\n\nReview it, then approve the spec to generate task.md and start the Evaluator-gated implementation loop.`);
     } else {
       yield { type: "orchestration.phase.completed", runId, phase: "planning", status: "failed", summary: "Planner ended without finalizing spec.md", agentId: PLANNER.id, agentName: PLANNER.name };
     }
@@ -152,21 +152,26 @@ export class CodingOrchestratorRuntime implements RuntimeRunner {
     await writeStateArtifact(artifacts, { phase: specFinalized ? "awaiting_spec_approval" : "failed", iteration: 0 });
     if (specFinalized) {
       yield { type: "orchestration.phase.completed", runId, phase: "planning", status: "awaiting_approval", summary: `Spec ready at ${artifacts.specPath}`, agentId: PLANNER.id, agentName: PLANNER.name };
-      yield this.assistantMessage(runId, `Spec ready: ${artifacts.specPath}\n\nReview it, then approve the spec to start the Generator/Evaluator loop.`);
+      yield this.assistantMessage(runId, `Spec ready: ${artifacts.specPath}\n\nReview it, then approve the spec to generate task.md and start the Evaluator-gated implementation loop.`);
     }
   }
 
   private async *runImplementationLoop(runId: string, input: string, artifacts: CodingRunArtifacts, specPath: string): AsyncIterable<RuntimeEvent> {
     let lastReport: EvaluationReport | null = null;
-    yield { type: "orchestration.phase.started", runId, phase: "generating", summary: `Starting implementation from ${specPath}`, agentId: GENERATOR.id, agentName: GENERATOR.name };
+    const taskAccepted = yield* this.createAndReviewTaskPlan(runId, input, artifacts, specPath);
+    if (!taskAccepted) {
+      this.activeRuntime = null;
+      return;
+    }
 
     for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
       await writeStateArtifact(artifacts, { phase: "generating", iteration, ...(lastReport ? { lastVerdict: lastReport["verdict"] } : {}) });
-      yield { type: "orchestration.handoff.created", runId, fromAgentId: PLANNER.id, toAgentId: GENERATOR.id, artifactPath: specPath, summary: `Implementation iteration ${iteration}` };
+      yield { type: "orchestration.handoff.created", runId, fromAgentId: EVALUATOR.id, toAgentId: GENERATOR.id, artifactPath: artifacts.taskPath, summary: `Implementation iteration ${iteration}` };
+      yield { type: "orchestration.phase.started", runId, phase: "generating", summary: `Generator implementing ${artifacts.taskPath}`, agentId: GENERATOR.id, agentName: GENERATOR.name };
 
       const generator = this.createGeneratorRuntime(artifacts);
       this.activeRuntime = generator;
-      const generatorPrompt = `${input}\n\nRead and implement spec: ${specPath}\n${lastReport ? `Previous evaluation: ${artifacts.evaluationPath}` : ""}`;
+      const generatorPrompt = `${input}\n\nRead spec: ${specPath}\nRead task plan: ${artifacts.taskPath}\n${lastReport ? `Previous evaluation: ${artifacts.evaluationPath}` : ""}`;
       for await (const event of generator.run(generatorPrompt, { runId, agentId: GENERATOR.id, agentName: GENERATOR.name, mode: "multi-agent", specPath })) {
         yield event;
         if (event.type === "tool.completed" && event.toolName === "submit_generator_notes" && event.result.ok) {
@@ -180,7 +185,7 @@ export class CodingOrchestratorRuntime implements RuntimeRunner {
 
       const evaluator = this.createEvaluatorRuntime(artifacts, (report) => { lastReport = report; });
       this.activeRuntime = evaluator;
-      for await (const event of evaluator.run(`Evaluate implementation against ${specPath}. Submit pass/fail evaluation.`, { runId, agentId: EVALUATOR.id, agentName: EVALUATOR.name, mode: "multi-agent", specPath })) {
+      for await (const event of evaluator.run(`Evaluate implementation against ${specPath} and ${artifacts.taskPath}. Submit pass/fail evaluation with target implementation.`, { runId, agentId: EVALUATOR.id, agentName: EVALUATOR.name, mode: "multi-agent", specPath })) {
         yield event;
         if (event.type === "tool.completed" && event.toolName === "submit_evaluation" && event.result.ok) {
           yield { type: "artifact.updated", runId, path: artifacts.evaluationPath, kind: "evaluation", summary: "Evaluation updated", agentId: EVALUATOR.id, agentName: EVALUATOR.name };
@@ -204,9 +209,69 @@ export class CodingOrchestratorRuntime implements RuntimeRunner {
     this.activeRuntime = null;
   }
 
-  private createPlannerRuntime(artifacts: CodingRunArtifacts, onFinalized: () => void): AgentRuntime {
+  private async *createAndReviewTaskPlan(runId: string, input: string, artifacts: CodingRunArtifacts, specPath: string): AsyncGenerator<RuntimeEvent, boolean> {
+    let taskFinalized = false;
+    const taskReviewStore: { current: EvaluationReport | null } = { current: null };
+
+    await writeStateArtifact(artifacts, { phase: "tasking", iteration: 0 });
+    yield { type: "orchestration.handoff.created", runId, fromAgentId: PLANNER.id, toAgentId: PLANNER.id, artifactPath: specPath, summary: "Create implementation task plan from approved spec" };
+    yield { type: "orchestration.phase.started", runId, phase: "tasking", summary: `Planner decomposing approved spec into ${artifacts.taskPath}`, agentId: PLANNER.id, agentName: PLANNER.name };
+
+    const planner = this.createPlannerRuntime(artifacts, () => undefined, () => { taskFinalized = true; });
+    this.activeRuntime = planner;
+    for await (const event of planner.run(`${input}\n\nApproved spec: ${specPath}\nCreate task.md from the approved spec only.`, { runId, agentId: PLANNER.id, agentName: PLANNER.name, mode: "multi-agent", specPath })) {
+      yield event;
+      if (event.type === "tool.completed" && event.toolName === "finalize_task_plan" && event.result.ok) {
+        yield { type: "artifact.updated", runId, path: artifacts.taskPath, kind: "task-plan", summary: "task.md finalized", agentId: PLANNER.id, agentName: PLANNER.name };
+      }
+    }
+
+    if (!taskFinalized) {
+      await writeStateArtifact(artifacts, { phase: "failed", iteration: 0 });
+      yield { type: "orchestration.phase.completed", runId, phase: "tasking", status: "failed", summary: "Planner ended without finalizing task.md", agentId: PLANNER.id, agentName: PLANNER.name };
+      yield { type: "agent.error", runId, error: { code: "TASK_PLAN_MISSING", message: "Planner did not finalize task.md." }, agentId: PLANNER.id, agentName: PLANNER.name };
+      return false;
+    }
+
+    await writeStateArtifact(artifacts, { phase: "awaiting_task_review", iteration: 0 });
+    yield { type: "orchestration.phase.completed", runId, phase: "tasking", status: "completed", summary: `Task plan ready at ${artifacts.taskPath}`, agentId: PLANNER.id, agentName: PLANNER.name };
+    yield { type: "orchestration.handoff.created", runId, fromAgentId: PLANNER.id, toAgentId: EVALUATOR.id, artifactPath: artifacts.taskPath, summary: "Review task plan before implementation" };
+    yield { type: "orchestration.phase.started", runId, phase: "task_review", summary: "Evaluator validating task.md", agentId: EVALUATOR.id, agentName: EVALUATOR.name };
+
+    const evaluator = this.createEvaluatorRuntime(artifacts, (report) => { taskReviewStore.current = report; });
+    this.activeRuntime = evaluator;
+    for await (const event of evaluator.run(`Evaluate task plan ${artifacts.taskPath} against approved spec ${specPath}. Submit pass/fail evaluation with target task_plan.`, { runId, agentId: EVALUATOR.id, agentName: EVALUATOR.name, mode: "multi-agent", specPath })) {
+      yield event;
+      if (event.type === "tool.completed" && event.toolName === "submit_evaluation" && event.result.ok) {
+        yield { type: "artifact.updated", runId, path: artifacts.evaluationPath, kind: "evaluation", summary: "Task plan evaluation updated", agentId: EVALUATOR.id, agentName: EVALUATOR.name };
+      }
+    }
+
+    const taskReview = taskReviewStore.current;
+    if (taskReview?.target === "task_plan" && taskReview.verdict === "pass") {
+      await writeStateArtifact(artifacts, { phase: "generating", iteration: 0, lastVerdict: "pass" });
+      yield { type: "orchestration.phase.completed", runId, phase: "task_review", status: "passed", summary: "Evaluator accepted task.md", agentId: EVALUATOR.id, agentName: EVALUATOR.name };
+      return true;
+    }
+
+    await writeStateArtifact(artifacts, { phase: "failed", iteration: 0, ...(taskReview ? { lastVerdict: taskReview.verdict } : {}) });
+    yield { type: "orchestration.phase.completed", runId, phase: "task_review", status: "failed", summary: "Evaluator rejected task.md", agentId: EVALUATOR.id, agentName: EVALUATOR.name };
+    yield { type: "agent.error", runId, error: { code: "TASK_PLAN_REJECTED", message: "Evaluator rejected task.md before implementation." }, agentId: EVALUATOR.id, agentName: EVALUATOR.name };
+    return false;
+  }
+
+  private createPlannerRuntime(artifacts: CodingRunArtifacts, onSpecFinalized: () => void, onTaskFinalized?: () => void): AgentRuntime {
     const registry = new ToolRegistry();
-    for (const tool of [readFileTool, listFilesTool, globSearchTool, grepSearchTool, fileInfoTool, createAskUserQuestionTool((params) => this.captureClarification(params)), createFinalizeSpecTool(artifacts, onFinalized)]) {
+    for (const tool of [
+      readFileTool,
+      listFilesTool,
+      globSearchTool,
+      grepSearchTool,
+      fileInfoTool,
+      createAskUserQuestionTool((params) => this.captureClarification(params)),
+      createFinalizeSpecTool(artifacts, onSpecFinalized),
+      createFinalizeTaskPlanTool(artifacts, onTaskFinalized),
+    ]) {
       registry.register(tool);
     }
     return this.createChildRuntime(createPlannerPrompt(this.cwd), registry, []);

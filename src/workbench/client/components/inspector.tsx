@@ -6,7 +6,7 @@ import type { deriveMetricsView } from "@/ui-state";
 
 // ── Inspector Panel ────────────────────────────────────────────────────────────
 
-const INSPECTOR_TABS = ["timeline", "tool", "diff", "policy", "transcript", "metrics"] as const;
+const INSPECTOR_TABS = ["timeline", "artifacts", "tool", "diff", "policy", "transcript", "metrics"] as const;
 type InspectorTab = (typeof INSPECTOR_TABS)[number];
 
 export function InspectorPanel({
@@ -41,6 +41,7 @@ export function InspectorPanel({
       </nav>
       <div className="inspector-body">
         {selectedInspector === "timeline" && <TimelinePanel state={state} onToolClick={onTimelineToolClick} />}
+        {selectedInspector === "artifacts" && <ArtifactInspector artifacts={state.orchestration.artifacts} />}
         {selectedInspector === "tool" && <ToolInspector tool={selectedTool} />}
         {selectedInspector === "diff" && <DiffViewer changes={state.fileChanges} />}
         {selectedInspector === "policy" && <PolicyInspector decisions={state.policyDecisions} selected={selectedPolicy} />}
@@ -48,6 +49,32 @@ export function InspectorPanel({
         {selectedInspector === "metrics" && <MetricsPanel metrics={metrics} state={state} />}
       </div>
     </aside>
+  );
+}
+
+function ArtifactInspector({ artifacts }: { artifacts: AgentUiState["orchestration"]["artifacts"] }) {
+  const all = Object.values(artifacts);
+  if (all.length === 0) {
+    return <PanelEmpty>No orchestration artifacts yet.</PanelEmpty>;
+  }
+  return (
+    <div className="inspector-content">
+      {all.map((artifact) => (
+        <article key={artifact.path} className="artifact-inspector-card">
+          <div className="insp-row">
+            <span className="insp-label">Kind</span>
+            <strong className="insp-value">{artifact.kind ?? "artifact"}</strong>
+          </div>
+          <div className="insp-row">
+            <span className="insp-label">Agent</span>
+            <span className="insp-value">{artifact.agentId ?? "unknown"}</span>
+          </div>
+          <div className="insp-section-title">Path</div>
+          <pre className="insp-pre artifact-path-pre">{artifact.path}</pre>
+          {artifact.summary && <p className="insp-summary">{artifact.summary}</p>}
+        </article>
+      ))}
+    </div>
   );
 }
 
@@ -286,4 +313,3 @@ function MetricsPanel({
 function PanelEmpty({ children }: { children: React.ReactNode }) {
   return <div className="panel-empty">{children}</div>;
 }
-

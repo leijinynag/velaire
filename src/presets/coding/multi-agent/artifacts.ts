@@ -10,6 +10,7 @@ export function createCodingRunArtifacts(cwd: string, runId: string): CodingRunA
   return {
     root,
     specPath: path.join(root, "spec.md"),
+    taskPath: path.join(root, "task.md"),
     generatorNotesPath: path.join(root, "generator-notes.md"),
     evaluationPath: path.join(root, "evaluation.md"),
     statePath: path.join(root, "state.json"),
@@ -21,11 +22,19 @@ export async function ensureCodingRunArtifacts(artifacts: CodingRunArtifacts): P
 }
 
 export async function writeSpecArtifact(artifacts: CodingRunArtifacts, content: string): Promise<void> {
-  await writeArtifactFile(artifacts, artifacts.specPath, normalizeSpec(content));
+  await writeArtifactFile(artifacts, artifacts.specPath, normalizeMarkdown(content));
 }
 
 export async function readSpecArtifact(artifacts: CodingRunArtifacts): Promise<string> {
   return readFile(artifacts.specPath, "utf8");
+}
+
+export async function writeTaskPlanArtifact(artifacts: CodingRunArtifacts, content: string): Promise<void> {
+  await writeArtifactFile(artifacts, artifacts.taskPath, normalizeMarkdown(content));
+}
+
+export async function readTaskPlanArtifact(artifacts: CodingRunArtifacts): Promise<string> {
+  return readFile(artifacts.taskPath, "utf8");
 }
 
 export async function writeGeneratorNotesArtifact(artifacts: CodingRunArtifacts, notes: GeneratorNotes): Promise<void> {
@@ -45,6 +54,8 @@ export async function writeGeneratorNotesArtifact(artifacts: CodingRunArtifacts,
 export async function writeEvaluationArtifact(artifacts: CodingRunArtifacts, report: EvaluationReport): Promise<void> {
   const content = [
     "# Evaluation",
+    "",
+    `Target: ${report.target}`,
     "",
     `Verdict: ${report.verdict}`,
     "",
@@ -75,7 +86,7 @@ async function writeArtifactFile(artifacts: CodingRunArtifacts, target: string, 
   await writeFile(target, content);
 }
 
-function normalizeSpec(content: string): string {
+function normalizeMarkdown(content: string): string {
   const trimmed = content.trim();
   return trimmed.endsWith("\n") ? trimmed : `${trimmed}\n`;
 }

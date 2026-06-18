@@ -3,8 +3,10 @@ export type CodingAgentRole = "planner" | "generator" | "evaluator";
 export type CodingOrchestratorPhase =
   | "idle"
   | "planning"
-  | "spec_ready"
   | "awaiting_spec_approval"
+  | "tasking"
+  | "awaiting_task_review"
+  | "task_review"
   | "generating"
   | "evaluating"
   | "fixing"
@@ -23,12 +25,16 @@ export interface CodingOrchestratorOptions {
 export interface CodingRunArtifacts {
   root: string;
   specPath: string;
+  taskPath: string;
   generatorNotesPath: string;
   evaluationPath: string;
   statePath: string;
 }
 
+export type EvaluationTarget = "task_plan" | "implementation";
+
 export interface EvaluationReport extends Record<string, unknown> {
+  target: EvaluationTarget;
   verdict: EvaluationVerdict;
   summary: string;
   requiredFixes: string[];

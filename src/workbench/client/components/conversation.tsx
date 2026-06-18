@@ -106,6 +106,8 @@ function ArtifactShelf({ artifacts, onStartImplementation }: { artifacts: AgentU
             <span className="artifact-kind">{artifact.kind ?? "artifact"}</span>
             <code className="artifact-path">{artifact.path}</code>
             {artifact.summary && <p>{artifact.summary}</p>}
+            {artifact.kind === "task-plan" && <p>Task plan is ready for evaluator review.</p>}
+            {artifact.kind === "evaluation" && <p>Latest evaluator report is available.</p>}
           </div>
           {artifact.kind === "spec" && onStartImplementation && (
             <button className="artifact-action" onClick={() => void onStartImplementation()}>
@@ -457,4 +459,3 @@ function Composer({ onSubmit, onPlanWithMultiAgent, onStop, disabled }: { onSubm
     </form>
   );
 }
-

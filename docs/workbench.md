@@ -45,6 +45,13 @@ data: {"type":"agent.run.started","runId":"...","input":"..."}
 
 Events are stored in `.velaire/runs/<runId>.jsonl`. Each line is a single `RuntimeEvent`, which lets the Web UI replay runs without re-executing tools.
 
-## Multi-Agent UI Reserve
+## Multi-Agent Coding Harness
 
-The runtime remains single-agent in v1, but events may include optional `agentId` and `agentName` metadata. The shared UI state groups those events into agent lanes so a future multi-agent backend can render planner/coder/reviewer lanes without a frontend rewrite.
+The experimental `coding-multi-agent` preset emits `agentId` and `agentName` metadata for Planner, Generator, and Evaluator lanes. Workbench renders those lanes from the shared UI reducer and shows orchestration events in the timeline.
+
+The harness writes run artifacts under `.velaire/coding-runs/<runId>/`:
+
+- `spec.md` from Planner, approved by the user before implementation.
+- `task.md` from Planner after spec approval, reviewed by Evaluator before Generator starts.
+- `generator-notes.md` from Generator for Evaluator handoff.
+- `evaluation.md` from Evaluator for task-plan and implementation reviews.

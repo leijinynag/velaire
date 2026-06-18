@@ -3,7 +3,7 @@ import { z } from "zod";
 import { toolSuccess } from "@/tools/results";
 import type { ToolDefinition } from "@/tools/types";
 
-import { writeEvaluationArtifact, writeGeneratorNotesArtifact, writeSpecArtifact } from "./artifacts";
+import { writeEvaluationArtifact, writeGeneratorNotesArtifact, writeSpecArtifact, writeTaskPlanArtifact } from "./artifacts";
 import type { CodingRunArtifacts, EvaluationReport, GeneratorNotes } from "./types";
 
 export function createFinalizeSpecTool(artifacts: CodingRunArtifacts, onFinalized?: (content: string) => void): ToolDefinition<{ content: string }> {
@@ -20,6 +20,25 @@ export function createFinalizeSpecTool(artifacts: CodingRunArtifacts, onFinalize
         summary: "Finalized spec.md",
         modelContent: `Spec finalized at ${artifacts.specPath}`,
         data: { path: artifacts.specPath, kind: "spec" },
+      });
+    },
+  };
+}
+
+export function createFinalizeTaskPlanTool(artifacts: CodingRunArtifacts, onFinalized?: (content: string) => void): ToolDefinition<{ content: string }> {
+  return {
+    name: "finalize_task_plan",
+    description: "Finalize the approved-spec implementation breakdown and write it as this run's task.md artifact.",
+    schema: z.object({ content: z.string().min(1) }),
+    capabilities: ["planning", "artifact.write"],
+    risk: { level: "low", reversible: true, description: "Writes an implementation task artifact under the Velaire run directory." },
+    async execute(input) {
+      await writeTaskPlanArtifact(artifacts, input.content);
+      onFinalized?.(input.content);
+      return toolSuccess({
+        summary: "Finalized task.md",
+        modelContent: `Task plan finalized at ${artifacts.taskPath}`,
+        data: { path: artifacts.taskPath, kind: "task-plan" },
       });
     },
   };
@@ -53,6 +72,7 @@ export function createSubmitEvaluationTool(artifacts: CodingRunArtifacts, onSubm
     name: "submit_evaluation",
     description: "Submit an independent pass/fail evaluation for the current implementation iteration.",
     schema: z.object({
+      target: z.enum(["task_plan", "implementation"]).default("implementation"),
       verdict: z.enum(["pass", "fail"]),
       summary: z.string().min(1),
       requiredFixes: z.array(z.string()).default([]),
