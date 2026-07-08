@@ -5,8 +5,9 @@
 </p>
 
 <p align="center">
-  <a href="./docs/assets/velaire-workbench-demo.mp4">Watch the Workbench demo video</a>
-  ·
+
+   https://github.com/user-attachments/assets/a577dd31-f7ed-48c5-a75a-c0a2f675de77
+
   <a href="./README.zh.md">中文 README</a>
   ·
   <a href="./docs/architecture.md">Architecture</a>
