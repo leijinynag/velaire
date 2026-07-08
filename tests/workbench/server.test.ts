@@ -139,6 +139,174 @@ describe("workbench server", () => {
     expect(summary.status).toBe("idle");
   });
 
+  test("session runs pass the selected workbench mode into the runtime", async () => {
+    const cwd = await makeTempDir();
+    const receivedModes: unknown[] = [];
+    const sessionManager = new SessionManager(async () => ({
+      abort() {},
+      hasApprovalHandler() { return false; },
+      messages: [],
+      modelName: "mock",
+      async *run(prompt: string, options?: { mode?: string }) {
+        receivedModes.push(options?.mode);
+        yield { type: "agent.run.started", runId: "runtime_run", input: prompt };
+        yield { type: "agent.run.completed", runId: "runtime_run" };
+      },
+    }));
+
+    const session = await handleWorkbenchRequest(request("/api/sessions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workspace: cwd, preset: "coding-multi-agent" }),
+    }), { cwd, sessionManager }).then((response) => response.json()) as { sessionId: string };
+
+    const response = await handleWorkbenchRequest(request(`/api/sessions/${session.sessionId}/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "plan this", mode: "plan" }),
+    }), { cwd, sessionManager });
+
+    expect(response.status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(receivedModes).toEqual(["plan"]);
+  });
+
+  test("session question API resolves ask_user_question interactions", async () => {
+    const cwd = await makeTempDir();
+    let resolvedAnswer: unknown;
+    const sessionManager = new SessionManager(async (_workspace, _approvalManager, _preset, interactions) => ({
+      abort() {},
+      hasApprovalHandler() { return false; },
+      messages: [],
+      modelName: "mock",
+      async *run(prompt: string) {
+        yield { type: "agent.run.started", runId: "runtime_run", input: prompt };
+        yield {
+          type: "user.question.requested",
+          runId: "runtime_run",
+          step: 1,
+          toolUseId: "toolu_question",
+          questions: [
+            {
+              header: "Mode",
+              question: "Choose mode",
+              multi_select: false,
+              options: [
+                { label: "Fast", description: "Quick pass" },
+                { label: "Polished", description: "More detail" },
+              ],
+            },
+          ],
+        };
+        resolvedAnswer = await interactions?.askUserQuestion({
+          questions: [
+            {
+              header: "Mode",
+              question: "Choose mode",
+              multi_select: false,
+              options: [
+                { label: "Fast", description: "Quick pass" },
+                { label: "Polished", description: "More detail" },
+              ],
+            },
+          ],
+        }, "toolu_question");
+        yield { type: "user.question.resolved", runId: "runtime_run", step: 1, toolUseId: "toolu_question", answers: [{ question_index: 0, selected_labels: ["Fast"] }] };
+        yield { type: "agent.run.completed", runId: "runtime_run" };
+      },
+    }));
+
+    const session = await handleWorkbenchRequest(request("/api/sessions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workspace: cwd, preset: "coding-multi-agent" }),
+    }), { cwd, sessionManager }).then((response) => response.json()) as { sessionId: string };
+
+    await handleWorkbenchRequest(request(`/api/sessions/${session.sessionId}/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "ask" }),
+    }), { cwd, sessionManager });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const events = sessionManager.get(session.sessionId)?.events ?? [];
+    expect(events).toContainEqual(expect.objectContaining({ type: "user.question.requested", toolUseId: "toolu_question" }));
+
+    const answered = await handleWorkbenchRequest(request(`/api/sessions/${session.sessionId}/questions/toolu_question`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ answers: [{ question_index: 0, selected_labels: ["Fast"] }] }),
+    }), { cwd, sessionManager });
+
+    expect(answered.status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(resolvedAnswer).toEqual({ answers: [{ question_index: 0, selected_labels: ["Fast"] }] });
+    expect(sessionManager.get(session.sessionId)?.events).toContainEqual(expect.objectContaining({ type: "user.question.resolved", toolUseId: "toolu_question" }));
+  });
+
+  test("session question API resolves the only pending question even when ids differ", async () => {
+    const cwd = await makeTempDir();
+    let resolvedAnswer: unknown;
+    const sessionManager = new SessionManager(async (_workspace, _approvalManager, _preset, interactions) => ({
+      abort() {},
+      hasApprovalHandler() { return false; },
+      messages: [],
+      modelName: "mock",
+      async *run(prompt: string) {
+        yield { type: "agent.run.started", runId: "runtime_run", input: prompt };
+        yield {
+          type: "user.question.requested",
+          runId: "runtime_run",
+          step: 1,
+          toolUseId: "call_question",
+          questions: [
+            {
+              header: "Mode",
+              question: "Choose mode",
+              multi_select: false,
+              options: [{ label: "Fast", description: "Quick pass" }],
+            },
+          ],
+        };
+        resolvedAnswer = await interactions?.askUserQuestion({
+          questions: [
+            {
+              header: "Mode",
+              question: "Choose mode",
+              multi_select: false,
+              options: [{ label: "Fast", description: "Quick pass" }],
+            },
+          ],
+        });
+        yield { type: "agent.run.completed", runId: "runtime_run" };
+      },
+    }));
+
+    const session = await handleWorkbenchRequest(request("/api/sessions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workspace: cwd, preset: "coding-multi-agent" }),
+    }), { cwd, sessionManager }).then((response) => response.json()) as { sessionId: string };
+
+    await handleWorkbenchRequest(request(`/api/sessions/${session.sessionId}/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "ask" }),
+    }), { cwd, sessionManager });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const answered = await handleWorkbenchRequest(request(`/api/sessions/${session.sessionId}/questions/call_question`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ answers: [{ question_index: 0, selected_labels: ["Fast"] }] }),
+    }), { cwd, sessionManager });
+
+    expect(answered.status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(resolvedAnswer).toEqual({ answers: [{ question_index: 0, selected_labels: ["Fast"] }] });
+  });
+
   test("stopping a session releases pending approvals without replaying stale run events", async () => {
     const cwd = await makeTempDir();
     const approvalDecisions: ApprovalDecision[] = [];

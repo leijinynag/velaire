@@ -18,6 +18,34 @@ function createRuntime(cwd: string, provider: MockModelProvider) {
 }
 
 describe("coding multi-agent orchestrator", () => {
+  test("normal mode delegates to the single-agent coding runtime", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "velaire-orchestrator-"));
+    try {
+      const provider = new MockModelProvider({
+        eventBatches: [
+          [
+            { type: "message_start" },
+            { type: "text_delta", text: "Single agent answer." },
+            { type: "message_stop" },
+          ],
+        ],
+      });
+      const runtime = createRuntime(cwd, provider);
+      const events = [];
+
+      for await (const event of runtime.run("answer directly", { runId: "run_normal", mode: "normal" })) {
+        events.push(event);
+      }
+
+      expect(events).toContainEqual(expect.objectContaining({ type: "agent.run.started", runId: "run_normal", agentId: "default" }));
+      expect(events).toContainEqual(expect.objectContaining({ type: "model.message.completed", agentId: "default" }));
+      expect(events).not.toContainEqual(expect.objectContaining({ type: "orchestration.phase.started" }));
+      expect(existsSync(join(cwd, ".velaire", "coding-runs", "run_normal", "spec.md"))).toBe(false);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("planner finalizes spec as a run artifact", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "velaire-orchestrator-"));
     try {

@@ -12,14 +12,19 @@ import { Markdown } from "./markdown";
 export const MessageHistory = memo(function MessageHistory({
   messages,
   startIndex = 0,
+  hiddenMessageCount = 0,
   todoSnapshots,
 }: {
   messages: NonSystemMessage[];
   startIndex?: number;
+  hiddenMessageCount?: number;
   todoSnapshots: Map<string, TodoItemView[]>;
 }) {
   return (
     <Box flexDirection="column" rowGap={1} width="100%">
+      {hiddenMessageCount > 0 ? (
+        <Text color={currentTheme.colors.dimText}>… {hiddenMessageCount} earlier messages hidden. Full transcript is preserved.</Text>
+      ) : null}
       {messages.map((message, index) => {
         return (
           <MessageHistoryItem

@@ -14,6 +14,8 @@ import { createAskUserQuestionTool } from "@/tools/user-interaction";
 import type { AskUserQuestionParameters, AskUserQuestionResult } from "@/tools/user-interaction";
 import { fileInfoTool, globSearchTool, grepSearchTool, listFilesTool, readFileTool } from "@/tools/workspace";
 
+import { createCodingSystemPrompt } from "../system-prompt";
+
 import { createCodingRunArtifacts, ensureCodingRunArtifacts, writeStateArtifact } from "./artifacts";
 import { createEvaluatorPrompt, createGeneratorPrompt, createPlannerPrompt } from "./prompts";
 import { createFinalizeSpecTool, createFinalizeTaskPlanTool, createSubmitEvaluationTool, createSubmitGeneratorNotesTool } from "./tools";
@@ -29,6 +31,7 @@ export interface CodingOrchestratorRuntimeOptions {
   cwd: string;
   policyProfile: PolicyProfile;
   askUser?: (request: { toolUseId: string; toolName: string; input: Record<string, unknown> }) => Promise<"allow_once" | "allow_always_project" | "deny">;
+  askUserQuestion?: (params: AskUserQuestionParameters, toolUseId?: string) => Promise<AskUserQuestionResult>;
   approvalPersistence?: ApprovalPersistence;
   maxIterations?: number;
 }
@@ -42,6 +45,7 @@ export class CodingOrchestratorRuntime implements RuntimeRunner {
   private readonly cwd: string;
   private readonly policyProfile: PolicyProfile;
   private readonly askUser: CodingOrchestratorRuntimeOptions["askUser"];
+  private readonly askUserQuestion: CodingOrchestratorRuntimeOptions["askUserQuestion"];
   private readonly approvalPersistence: ApprovalPersistence | undefined;
   private readonly maxIterations: number;
   private activeRuntime: AgentRuntime | null = null;
@@ -58,12 +62,18 @@ export class CodingOrchestratorRuntime implements RuntimeRunner {
     this.cwd = options.cwd;
     this.policyProfile = options.policyProfile;
     this.askUser = options.askUser;
+    this.askUserQuestion = options.askUserQuestion;
     this.approvalPersistence = options.approvalPersistence;
     this.maxIterations = options.maxIterations ?? 5;
   }
 
   async *run(input: string, options: { runId?: string; mode?: "normal" | "plan" | "multi-agent"; specPath?: string } = {}): AsyncIterable<RuntimeEvent> {
     const runId = options.runId ?? createRunId();
+    if (options.mode === "normal") {
+      yield* this.runSingleAgent(runId, input);
+      return;
+    }
+
     const artifacts = createCodingRunArtifacts(this.cwd, runId);
     await ensureCodingRunArtifacts(artifacts);
     this.messages.push({ role: "user", content: [{ type: "text", text: input }] });
@@ -120,6 +130,16 @@ export class CodingOrchestratorRuntime implements RuntimeRunner {
     } else {
       yield { type: "orchestration.phase.completed", runId, phase: "planning", status: "failed", summary: "Planner ended without finalizing spec.md", agentId: PLANNER.id, agentName: PLANNER.name };
     }
+    this.activeRuntime = null;
+  }
+
+  private async *runSingleAgent(runId: string, input: string): AsyncIterable<RuntimeEvent> {
+    const toolSystem = createCodingToolSystem({ askUserQuestion: this.askUserQuestion });
+    const registry = new ToolRegistry();
+    for (const tool of toolSystem.tools) registry.register(tool);
+    const runtime = this.createChildRuntime(await createCodingSystemPrompt({ cwd: this.cwd }), registry, toolSystem.middleware);
+    this.activeRuntime = runtime;
+    yield* runtime.run(input, { runId, mode: "normal", agentId: "default", agentName: "Default Agent" });
     this.activeRuntime = null;
   }
 
@@ -268,7 +288,7 @@ export class CodingOrchestratorRuntime implements RuntimeRunner {
       globSearchTool,
       grepSearchTool,
       fileInfoTool,
-      createAskUserQuestionTool((params) => this.captureClarification(params)),
+      createAskUserQuestionTool((params, toolUseId) => this.askUserQuestion ? this.askUserQuestion(params, toolUseId) : this.captureClarification(params)),
       createFinalizeSpecTool(artifacts, onSpecFinalized),
       createFinalizeTaskPlanTool(artifacts, onTaskFinalized),
     ]) {
@@ -278,7 +298,7 @@ export class CodingOrchestratorRuntime implements RuntimeRunner {
   }
 
   private createGeneratorRuntime(artifacts: CodingRunArtifacts): AgentRuntime {
-    const toolSystem = createCodingToolSystem();
+    const toolSystem = createCodingToolSystem({ askUserQuestion: this.askUserQuestion });
     const registry = new ToolRegistry();
     for (const tool of [...toolSystem.tools, createSubmitGeneratorNotesTool(artifacts)]) registry.register(tool);
     return this.createChildRuntime(createGeneratorPrompt(this.cwd, artifacts), registry, toolSystem.middleware);

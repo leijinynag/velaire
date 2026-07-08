@@ -100,4 +100,41 @@ describe("shared agent UI reducer", () => {
     expect(Object.keys(resolved.pendingApprovals)).toEqual(["toolu_2"]);
     expect(resolved.pendingApproval?.toolUseId).toBe("toolu_2");
   });
+
+  test("tracks pending user questions and clears them when answered", () => {
+    const requested = reduceAll([
+      {
+        type: "user.question.requested",
+        runId,
+        step: 1,
+        toolUseId: "toolu_question",
+        questions: [
+          {
+            header: "Style",
+            question: "Pick a style",
+            multi_select: false,
+            options: [
+              { label: "Simple", description: "Keep it small" },
+              { label: "Rich", description: "Add polish" },
+            ],
+          },
+        ],
+      },
+    ]);
+
+    expect(requested.pendingUserQuestion?.toolUseId).toBe("toolu_question");
+    expect(Object.keys(requested.pendingUserQuestions)).toEqual(["toolu_question"]);
+
+    const resolved = reduceRuntimeEvent(requested, {
+      type: "user.question.resolved",
+      runId,
+      step: 1,
+      toolUseId: "toolu_question",
+      answers: [{ question_index: 0, selected_labels: ["Simple"] }],
+    });
+
+    expect(resolved.pendingUserQuestion).toBeNull();
+    expect(resolved.pendingUserQuestions).toEqual({});
+    expect(resolved.userQuestions.toolu_question?.answers).toEqual([{ question_index: 0, selected_labels: ["Simple"] }]);
+  });
 });

@@ -15,6 +15,8 @@ describe("runtime events", () => {
       "policy.decision",
       "approval.requested",
       "approval.resolved",
+      "user.question.requested",
+      "user.question.resolved",
       "tool.started",
       "tool.completed",
       "timeline.item.added",

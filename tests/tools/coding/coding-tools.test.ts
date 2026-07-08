@@ -190,6 +190,20 @@ describe("shell tool", () => {
     await expect(promise).resolves.toMatchObject({ ok: false, error: { code: "COMMAND_ABORTED" } });
   });
 
+  test("bash timeout kills background children holding stdio open", async () => {
+    const result = await execute("bash", {
+      command: "node -e \"setInterval(() => {}, 1000)\" & printf ready",
+      timeout: 200,
+      maxChars: 200,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "COMMAND_TIMEOUT" },
+    });
+    expect(result.modelContent).toContain("ready");
+  });
+
   test("bash executes commands with bash instead of zsh", async () => {
     const result = await execute("bash", { command: "test -n \"$BASH_VERSION\" && printf '%s' \"$BASH_VERSION\"" });
     expect(result).toMatchObject({ ok: true });

@@ -1,10 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 
 import type { NonSystemMessage } from "@/foundation/messages/types";
 import type { ApprovalDecision } from "@/policy/types";
+import type { AskUserQuestionAnswer } from "@/tools/user-interaction";
 import type { AgentUiState } from "@/ui-state";
 import type { deriveConversationView } from "@/ui-state";
+
+import type { WorkbenchRunMode } from "../hooks/use-workbench-run";
 
 import { DiffLines, FallbackDiff } from "./inspector";
 
@@ -15,21 +18,25 @@ export function AgentCanvas({
   conversation,
   error,
   onSubmit,
-  onPlanWithMultiAgent,
+  runMode,
+  onRunModeChange,
   onStartImplementation,
   onStop,
   onSelectTool,
   onApprove,
+  onAnswerQuestion,
 }: {
   state: AgentUiState;
   conversation: ReturnType<typeof deriveConversationView>;
   error: string | null;
   onSubmit: (prompt: string) => Promise<void>;
-  onPlanWithMultiAgent?: (prompt: string) => Promise<void>;
+  runMode: WorkbenchRunMode;
+  onRunModeChange: (mode: WorkbenchRunMode) => void;
   onStartImplementation?: () => Promise<void>;
   onStop: () => Promise<void>;
   onSelectTool: (id: string) => void;
   onApprove: (toolUseId: string, decision: ApprovalDecision) => Promise<void>;
+  onAnswerQuestion: (toolUseId: string, answers: AskUserQuestionAnswer[]) => Promise<void>;
 }) {
   return (
     <main className="agent-canvas">
@@ -38,22 +45,33 @@ export function AgentCanvas({
       {error && <div className="run-error">{error}</div>}
       <ConversationTrace
         messages={conversation.messages}
+        hiddenMessageCount={conversation.hiddenMessageCount}
         tools={state.tools}
         fileChanges={state.fileChanges}
         pendingApprovals={state.pendingApprovals}
+        pendingUserQuestions={state.pendingUserQuestions}
         isRunning={state.isRunning}
         onSelectTool={onSelectTool}
         onApprove={onApprove}
+        onAnswerQuestion={onAnswerQuestion}
       />
       <ArtifactShelf artifacts={state.orchestration.artifacts} onStartImplementation={onStartImplementation} />
-      <Composer onSubmit={onSubmit} onPlanWithMultiAgent={onPlanWithMultiAgent} onStop={onStop} disabled={state.isRunning} />
+      <Composer
+        onSubmit={onSubmit}
+        runMode={runMode}
+        onRunModeChange={onRunModeChange}
+        onStop={onStop}
+        disabled={state.isRunning}
+      />
     </main>
   );
 }
 
 function AgentLanesBar({ agents, orchestration }: { agents: AgentUiState["agents"]; orchestration: AgentUiState["orchestration"] }) {
   const lanes = Object.values(agents);
-  const display = lanes.length > 0 ? lanes : [{ id: "default", name: "Default Agent", status: "idle" as const, step: null, eventCount: 0 }];
+  const hasNamedAgents = lanes.some((agent) => agent.id !== "default");
+  const visibleLanes = hasNamedAgents ? lanes.filter((agent) => agent.id !== "default") : lanes;
+  const display = visibleLanes.length > 0 ? visibleLanes : [{ id: "default", name: "Default Agent", status: "idle" as const, step: null, eventCount: 0 }];
   return (
     <div className="agent-lanes-bar">
       {display.map((agent) => (
@@ -96,7 +114,19 @@ function PhaseTimeline({ orchestration }: { orchestration: AgentUiState["orchest
 }
 
 function ArtifactShelf({ artifacts, onStartImplementation }: { artifacts: AgentUiState["orchestration"]["artifacts"]; onStartImplementation?: () => Promise<void> }) {
-  const list = Object.values(artifacts);
+  const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
+  const artifactKeys = useMemo(() => Object.keys(artifacts).sort().join("\n"), [artifacts]);
+  useEffect(() => {
+    setDismissed((prev) => {
+      const next = new Set<string>();
+      for (const path of artifactKeys ? artifactKeys.split("\n") : []) {
+        if (prev.has(path)) next.add(path);
+      }
+      return next;
+    });
+  }, [artifactKeys]);
+
+  const list = Object.values(artifacts).filter((artifact) => !dismissed.has(artifact.path));
   if (list.length === 0) return null;
   return (
     <div className="artifact-shelf">
@@ -114,6 +144,15 @@ function ArtifactShelf({ artifacts, onStartImplementation }: { artifacts: AgentU
               Approve spec & start implementation
             </button>
           )}
+          <button
+            className="artifact-dismiss"
+            type="button"
+            title="Dismiss artifact card"
+            aria-label={`Dismiss ${artifact.kind ?? "artifact"} card`}
+            onClick={() => setDismissed((prev) => new Set(prev).add(artifact.path))}
+          >
+            ×
+          </button>
         </div>
       ))}
     </div>
@@ -124,26 +163,45 @@ function ArtifactShelf({ artifacts, onStartImplementation }: { artifacts: AgentU
 
 function ConversationTrace({
   messages,
+  hiddenMessageCount,
   tools,
   fileChanges,
   pendingApprovals,
+  pendingUserQuestions,
   isRunning,
   onSelectTool,
   onApprove,
+  onAnswerQuestion,
 }: {
   messages: NonSystemMessage[];
+  hiddenMessageCount: number;
   tools: AgentUiState["tools"];
   fileChanges: AgentUiState["fileChanges"];
   pendingApprovals: AgentUiState["pendingApprovals"];
+  pendingUserQuestions: AgentUiState["pendingUserQuestions"];
   isRunning: boolean;
   onSelectTool: (id: string) => void;
   onApprove: (toolUseId: string, decision: ApprovalDecision) => Promise<void>;
+  onAnswerQuestion: (toolUseId: string, answers: AskUserQuestionAnswer[]) => Promise<void>;
 }) {
+  const traceRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [isFollowing, setIsFollowing] = useState(true);
+
+  function scrollToLatest(behavior: ScrollBehavior = "smooth") {
+    bottomRef.current?.scrollIntoView({ behavior, block: "end" });
+  }
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length, isRunning]);
+    if (isFollowing) scrollToLatest("smooth");
+  }, [messages.length, isRunning, isFollowing]);
+
+  function handleScroll() {
+    const el = traceRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setIsFollowing(distanceFromBottom < 80);
+  }
 
   const fileChangesByToolUseId = fileChanges.reduce<Record<string, typeof fileChanges>>((acc, fc) => {
     if (fc.toolUseId) {
@@ -154,7 +212,7 @@ function ConversationTrace({
 
   if (messages.length === 0) {
     return (
-      <div className="conversation-trace">
+      <div className="conversation-trace" ref={traceRef} onScroll={handleScroll}>
         <EmptyState />
         <div ref={bottomRef} />
       </div>
@@ -162,7 +220,8 @@ function ConversationTrace({
   }
 
   return (
-    <div className="conversation-trace">
+    <div className="conversation-trace" ref={traceRef} onScroll={handleScroll}>
+      <TraceWindowNotice hiddenMessageCount={hiddenMessageCount} />
       {messages.map((message, index) => (
         <TraceMessage
           key={index}
@@ -170,8 +229,10 @@ function ConversationTrace({
           tools={tools}
           fileChangesByToolUseId={fileChangesByToolUseId}
           pendingApprovals={pendingApprovals}
+          pendingUserQuestions={pendingUserQuestions}
           onSelectTool={onSelectTool}
           onApprove={onApprove}
+          onAnswerQuestion={onAnswerQuestion}
         />
       ))}
       {isRunning && (
@@ -186,7 +247,21 @@ function ConversationTrace({
           </div>
         </div>
       )}
+      {!isFollowing && (
+        <button className="jump-to-latest" type="button" onClick={() => { setIsFollowing(true); scrollToLatest(); }}>
+          Jump to latest
+        </button>
+      )}
       <div ref={bottomRef} />
+    </div>
+  );
+}
+
+function TraceWindowNotice({ hiddenMessageCount }: { hiddenMessageCount: number }) {
+  if (hiddenMessageCount <= 0) return null;
+  return (
+    <div className="trace-window-notice">
+      Showing latest messages. {hiddenMessageCount} earlier messages are in Transcript.
     </div>
   );
 }
@@ -196,15 +271,19 @@ function TraceMessage({
   tools,
   fileChangesByToolUseId,
   pendingApprovals,
+  pendingUserQuestions,
   onSelectTool,
   onApprove,
+  onAnswerQuestion,
 }: {
   message: NonSystemMessage;
   tools: AgentUiState["tools"];
   fileChangesByToolUseId: Record<string, AgentUiState["fileChanges"]>;
   pendingApprovals: AgentUiState["pendingApprovals"];
+  pendingUserQuestions: AgentUiState["pendingUserQuestions"];
   onSelectTool: (id: string) => void;
   onApprove: (toolUseId: string, decision: ApprovalDecision) => Promise<void>;
+  onAnswerQuestion: (toolUseId: string, answers: AskUserQuestionAnswer[]) => Promise<void>;
 }) {
   const role = message.role;
   const roleClass = role === "user" ? "user" : "assistant";
@@ -228,6 +307,7 @@ function TraceMessage({
             const tool = tools[part.id];
             const changes = fileChangesByToolUseId[part.id] ?? [];
             const pendingApproval = pendingApprovals[part.id];
+            const pendingQuestion = pendingUserQuestions[part.id];
             return (
               <div key={part.id} className="trace-tool-block">
                 <ToolChip
@@ -244,6 +324,12 @@ function TraceMessage({
                     toolName={pendingApproval.toolName ?? part.name}
                     input={part.input as Record<string, unknown>}
                     onApprove={onApprove}
+                  />
+                )}
+                {pendingQuestion && (
+                  <InlineUserQuestionCard
+                    questionState={pendingQuestion}
+                    onAnswer={onAnswerQuestion}
                   />
                 )}
                 {changes.length > 0 && changes.map((fc) => (
@@ -369,6 +455,80 @@ function InlineApprovalCard({
   );
 }
 
+function InlineUserQuestionCard({
+  questionState,
+  onAnswer,
+}: {
+  questionState: NonNullable<AgentUiState["pendingUserQuestion"]>;
+  onAnswer: (toolUseId: string, answers: AskUserQuestionAnswer[]) => Promise<void>;
+}) {
+  const [selected, setSelected] = useState<Record<number, string[]>>({});
+  const [loading, setLoading] = useState(false);
+
+  function toggle(questionIndex: number, label: string, multi: boolean) {
+    setSelected((prev) => {
+      if (!multi) return { ...prev, [questionIndex]: [label] };
+      const current = new Set(prev[questionIndex] ?? []);
+      if (current.has(label)) current.delete(label);
+      else current.add(label);
+      return { ...prev, [questionIndex]: [...current] };
+    });
+  }
+
+  async function submit() {
+    const answers = questionState.questions.map((question, questionIndex) => ({
+      question_index: questionIndex,
+      selected_labels: selected[questionIndex]?.length ? selected[questionIndex]! : [question.options[0]!.label],
+    }));
+    setLoading(true);
+    await onAnswer(questionState.toolUseId, answers);
+    setLoading(false);
+  }
+
+  const canSubmit = questionState.questions.every((question, index) => {
+    const labels = selected[index] ?? [];
+    return question.multi_select ? labels.length > 0 : labels.length === 1;
+  });
+
+  return (
+    <div className="user-question-card-inline">
+      <div className="user-question-header">
+        <span className="question-icon">?</span>
+        <strong>Input needed</strong>
+        <code className="approval-tool-name">ask_user_question</code>
+      </div>
+      {questionState.questions.map((question, questionIndex) => (
+        <div key={`${question.header}:${questionIndex}`} className="user-question-block">
+          <div className="user-question-kicker">{question.header}</div>
+          <div className="user-question-text">{question.question}</div>
+          <div className="user-question-options">
+            {question.options.map((option) => {
+              const active = selected[questionIndex]?.includes(option.label) ?? false;
+              return (
+                <button
+                  key={option.label}
+                  type="button"
+                  className={`user-question-option${active ? " active" : ""}`}
+                  disabled={loading}
+                  onClick={() => toggle(questionIndex, option.label, question.multi_select)}
+                >
+                  <span>{option.label}</span>
+                  <small>{option.description}</small>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+      <div className="user-question-actions">
+        <button className="approval-btn allow-once" disabled={loading || !canSubmit} onClick={() => void submit()}>
+          Continue
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function InlineDiffCard({ change }: { change: AgentUiState["fileChanges"][number] }) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -404,7 +564,25 @@ function EmptyState() {
   );
 }
 
-function Composer({ onSubmit, onPlanWithMultiAgent, onStop, disabled }: { onSubmit: (prompt: string) => Promise<void>; onPlanWithMultiAgent?: (prompt: string) => Promise<void>; onStop: () => Promise<void>; disabled: boolean }) {
+const RUN_MODE_OPTIONS: Array<{ value: WorkbenchRunMode; label: string; hint: string }> = [
+  { value: "normal", label: "Normal", hint: "single coding agent" },
+  { value: "plan", label: "Plan", hint: "draft spec first" },
+  { value: "multi-agent", label: "Multi-agent", hint: "planner + evaluator + generator" },
+];
+
+function Composer({
+  onSubmit,
+  runMode,
+  onRunModeChange,
+  onStop,
+  disabled,
+}: {
+  onSubmit: (prompt: string) => Promise<void>;
+  runMode: WorkbenchRunMode;
+  onRunModeChange: (mode: WorkbenchRunMode) => void;
+  onStop: () => Promise<void>;
+  disabled: boolean;
+}) {
   const ref = useRef<HTMLTextAreaElement>(null);
   function submitWith(handler: (prompt: string) => Promise<void>) {
     const val = ref.current?.value.trim();
@@ -430,11 +608,25 @@ function Composer({ onSubmit, onPlanWithMultiAgent, onStop, disabled }: { onSubm
   return (
     <form className={`composer${disabled ? " running" : ""}`} onSubmit={handleSubmit}>
       <div className="composer-field">
+        <div className="composer-mode-row" aria-label="Run mode">
+          {RUN_MODE_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={`composer-mode-option${runMode === option.value ? " active" : ""}`}
+              disabled={disabled}
+              onClick={() => onRunModeChange(option.value)}
+              title={option.hint}
+            >
+              <span>{option.label}</span>
+            </button>
+          ))}
+        </div>
         <textarea
           ref={ref}
           name="prompt"
           className="composer-input"
-          placeholder={disabled ? "Agent is running" : "Ask Velaire to inspect, edit, or explain this workspace"}
+          placeholder={disabled ? "Agent is running" : placeholderForRunMode(runMode)}
           disabled={disabled}
           onKeyDown={handleKeyDown}
           rows={1}
@@ -445,17 +637,16 @@ function Composer({ onSubmit, onPlanWithMultiAgent, onStop, disabled }: { onSubm
           Stop
         </button>
       ) : (
-        <>
-          {onPlanWithMultiAgent && (
-            <button className="composer-btn secondary" type="button" title="Plan with multi-agent" onClick={() => submitWith(onPlanWithMultiAgent)}>
-              Plan with multi-agent
-            </button>
-          )}
-          <button className="composer-btn" type="submit" title="Run prompt">
-            Run
-          </button>
-        </>
+        <button className="composer-btn" type="submit" title="Run prompt">
+          Run
+        </button>
       )}
     </form>
   );
+}
+
+function placeholderForRunMode(mode: WorkbenchRunMode): string {
+  if (mode === "plan") return "Plan the change, clarify scope, and produce spec.md";
+  if (mode === "multi-agent") return "Run the planner, evaluator, and generator harness";
+  return "Ask Velaire to inspect, edit, or explain this workspace";
 }

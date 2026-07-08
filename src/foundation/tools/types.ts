@@ -22,6 +22,7 @@ export interface ToolRiskProfile {
 
 export interface ToolExecutionContext {
   cwd: string;
+  toolUseId?: string;
   signal?: AbortSignal;
 }
 

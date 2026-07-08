@@ -2,6 +2,7 @@ import type { RuntimeEvent } from "@/foundation/events/types";
 import { evaluatePolicy } from "@/policy/engine";
 import type { ApprovalDecision } from "@/policy/types";
 import { toolFailure } from "@/tools/results";
+import type { AskUserQuestionParameters, AskUserQuestionResult } from "@/tools/user-interaction";
 
 import type { ToolCallExecutionRequest } from "./types";
 
@@ -98,9 +99,15 @@ export async function* streamToolCallExecution(request: ToolCallExecutionRequest
   }
 
   yield { type: "tool.started", runId, step, toolUseId: toolUse.id, toolName: toolUse.name };
+  if (toolUse.name === "ask_user_question" && isAskUserQuestionParameters(toolUse.input)) {
+    yield { type: "user.question.requested", runId, step, toolUseId: toolUse.id, questions: toolUse.input.questions };
+  }
   try {
     // 所有工具执行都集中在这里，runtime 其他层不能直接调用 tool.execute。
-    const result = await registry.execute(toolUse.name, toolUse.input, { cwd, signal });
+    const result = await registry.execute(toolUse.name, toolUse.input, { cwd, toolUseId: toolUse.id, signal });
+    if (toolUse.name === "ask_user_question" && result.ok && isAskUserQuestionResult(result.data)) {
+      yield { type: "user.question.resolved", runId, step, toolUseId: toolUse.id, answers: result.data.answers };
+    }
     yield { type: "tool.completed", runId, step, toolUseId: toolUse.id, toolName: toolUse.name, result };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -118,4 +125,12 @@ export async function* streamToolCallExecution(request: ToolCallExecutionRequest
       }),
     };
   }
+}
+
+function isAskUserQuestionParameters(input: Record<string, unknown>): input is AskUserQuestionParameters {
+  return Array.isArray(input.questions);
+}
+
+function isAskUserQuestionResult(data: unknown): data is AskUserQuestionResult {
+  return !!data && typeof data === "object" && Array.isArray((data as { answers?: unknown }).answers);
 }

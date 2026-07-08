@@ -2,6 +2,7 @@ import type { RuntimeEvent } from "@/foundation/events/types";
 import { ApprovalManager } from "@/policy/approval-manager";
 import type { ApprovalDecision } from "@/policy/types";
 import type { AgentRunOptions, RuntimeRunner } from "@/runtime/types";
+import type { AskUserQuestionParameters, AskUserQuestionResult } from "@/tools/user-interaction";
 
 import { appendRunEvent } from "./run-log";
 import { encodeRuntimeEvent } from "./sse";
@@ -16,6 +17,7 @@ export interface WorkbenchSession {
   runs: string[];
   status: "idle" | "running";
   currentRunId: string | null;
+  currentStep: number | null;
   createdAt: string;
   updatedAt: string;
   preset?: string;
@@ -36,11 +38,17 @@ export interface SessionRunOptions {
   specPath?: string;
 }
 
-export type CreateRuntimeFn = (workspace: string, approvalManager: ApprovalManager, preset?: string) => Promise<RuntimeRunner>;
+export type CreateRuntimeFn = (
+  workspace: string,
+  approvalManager: ApprovalManager,
+  preset?: string,
+  interactions?: { askUserQuestion: (params: AskUserQuestionParameters, toolUseId?: string) => Promise<AskUserQuestionResult> },
+) => Promise<RuntimeRunner>;
 
 export class SessionManager {
   private readonly sessions = new Map<string, WorkbenchSession>();
   private readonly createRuntime: CreateRuntimeFn;
+  private readonly pendingQuestions = new Map<string, { sessionId: string; resolve: (result: AskUserQuestionResult) => void }>();
 
   constructor(createRuntime: CreateRuntimeFn) {
     this.createRuntime = createRuntime;
@@ -49,7 +57,9 @@ export class SessionManager {
   async create(workspace: string, preset?: string): Promise<WorkbenchSession> {
     const sessionId = `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
     const approvalManager = new ApprovalManager();
-    const runtime = await this.createRuntime(workspace, approvalManager, preset);
+    const runtime = await this.createRuntime(workspace, approvalManager, preset, {
+      askUserQuestion: (params, toolUseId) => this.askUserQuestion(sessionId, params, toolUseId),
+    });
     const now = new Date().toISOString();
     const session: WorkbenchSession = {
       sessionId,
@@ -61,6 +71,7 @@ export class SessionManager {
       runs: [],
       status: "idle",
       currentRunId: null,
+      currentStep: null,
       createdAt: now,
       updatedAt: now,
       ...(preset ? { preset } : {}),
@@ -104,13 +115,7 @@ export class SessionManager {
     try {
       for await (const event of session.runtime.run(prompt, { runId, mode: options.mode, specPath: options.specPath })) {
         if (session.currentRunId !== runId) break;
-        session.events.push(event);
-        session.updatedAt = new Date().toISOString();
-        const frame = encodeRuntimeEvent(event);
-        for (const sub of session.subscribers) {
-          try { sub.enqueue(frame); } catch { /* subscriber already closed */ }
-        }
-        void appendRunEvent(session.workspace, runId, event).catch(() => undefined);
+        this.pushEvent(session, event);
       }
     } catch (error) {
       if (session.currentRunId === runId) {
@@ -122,17 +127,13 @@ export class SessionManager {
             message: error instanceof Error ? error.message : String(error),
           },
         };
-        session.events.push(event);
-        const frame = encodeRuntimeEvent(event);
-        for (const sub of session.subscribers) {
-          try { sub.enqueue(frame); } catch { /* closed */ }
-        }
-        void appendRunEvent(session.workspace, runId, event).catch(() => undefined);
+        this.pushEvent(session, event);
       }
     } finally {
       if (session.currentRunId === runId) {
         session.status = "idle";
         session.currentRunId = null;
+        session.currentStep = null;
       }
       session.updatedAt = new Date().toISOString();
       for (const sub of session.subscribers) {
@@ -159,27 +160,46 @@ export class SessionManager {
     return session.approvalManager.respondTo(toolUseId, decision);
   }
 
+  askUserQuestion(sessionId: string, params: AskUserQuestionParameters, requestedToolUseId?: string): Promise<AskUserQuestionResult> {
+    const session = this.sessions.get(sessionId);
+    if (!session || !session.currentRunId) return Promise.resolve({ answers: [] });
+    const toolUseId = requestedToolUseId ?? `question_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    return new Promise((resolve) => {
+      this.pendingQuestions.set(toolUseId, { sessionId, resolve });
+    });
+  }
+
+  answerQuestion(sessionId: string, toolUseId: string, result: AskUserQuestionResult): boolean {
+    const session = this.sessions.get(sessionId);
+    if (!session?.currentRunId) return false;
+
+    const pendingEntry = this.findPendingQuestion(sessionId, toolUseId);
+    if (!pendingEntry) return false;
+
+    const [pendingToolUseId, pending] = pendingEntry;
+    this.pendingQuestions.delete(pendingToolUseId);
+    pending.resolve(result);
+    return true;
+  }
+
   stopRun(sessionId: string): boolean {
     const session = this.sessions.get(sessionId);
     if (!session || session.status !== "running") return false;
     const runId = session.currentRunId;
     session.runtime.abort();
     session.approvalManager.denyAllPending();
+    this.resolvePendingQuestions(sessionId);
     if (runId) {
       const event: RuntimeEvent = {
         type: "agent.error",
         runId,
         error: { code: "RUN_ABORTED", message: "Run stopped by user." },
       };
-      session.events.push(event);
-      const frame = encodeRuntimeEvent(event);
-      for (const sub of session.subscribers) {
-        try { sub.enqueue(frame); } catch { /* closed */ }
-      }
-      void appendRunEvent(session.workspace, runId, event).catch(() => undefined);
+      this.pushEvent(session, event);
     }
     session.status = "idle";
     session.currentRunId = null;
+    session.currentStep = null;
     session.updatedAt = new Date().toISOString();
     for (const sub of session.subscribers) {
       try {
@@ -194,9 +214,39 @@ export class SessionManager {
   destroy(sessionId: string): void {
     const session = this.sessions.get(sessionId);
     if (!session) return;
+    this.resolvePendingQuestions(sessionId);
     for (const sub of session.subscribers) {
       try { sub.close(); } catch { /* already closed */ }
     }
     this.sessions.delete(sessionId);
+  }
+
+  private pushEvent(session: WorkbenchSession, event: RuntimeEvent): void {
+    session.events.push(event);
+    session.updatedAt = new Date().toISOString();
+    if ("step" in event && typeof event.step === "number") session.currentStep = event.step;
+    const frame = encodeRuntimeEvent(event);
+    for (const sub of session.subscribers) {
+      try { sub.enqueue(frame); } catch { /* subscriber already closed */ }
+    }
+    void appendRunEvent(session.workspace, event.runId, event).catch(() => undefined);
+  }
+
+  private resolvePendingQuestions(sessionId: string): void {
+    for (const [toolUseId, pending] of [...this.pendingQuestions]) {
+      if (pending.sessionId === sessionId) {
+        pending.resolve({ answers: [] });
+        this.pendingQuestions.delete(toolUseId);
+      }
+    }
+  }
+
+  private findPendingQuestion(sessionId: string, toolUseId: string): [string, { sessionId: string; resolve: (result: AskUserQuestionResult) => void }] | null {
+    const exact = this.pendingQuestions.get(toolUseId);
+    if (exact?.sessionId === sessionId) return [toolUseId, exact];
+
+    const sessionQuestions = [...this.pendingQuestions].filter(([, pending]) => pending.sessionId === sessionId);
+    if (sessionQuestions.length === 1) return sessionQuestions[0]!;
+    return null;
   }
 }

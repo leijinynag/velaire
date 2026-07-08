@@ -27,6 +27,21 @@ describe("TUI runtime reducer", () => {
     expect(view.messages.at(-1)).toEqual({ role: "assistant", content: [{ type: "text", text: "Hello" }] });
   });
 
+  test("view model exposes a recent message window without mutating history", () => {
+    const state = createInitialTuiState();
+    state.messages = Array.from({ length: 14 }, (_, index) => ({
+      role: index % 2 === 0 ? "user" : "assistant",
+      content: [{ type: "text", text: `message ${index}` }],
+    }));
+
+    const view = deriveTuiViewModel(state);
+
+    expect(state.messages).toHaveLength(14);
+    expect(view.messages).toHaveLength(10);
+    expect(view.messages[0]).toEqual({ role: "user", content: [{ type: "text", text: "message 4" }] });
+    expect(view.hiddenMessageCount).toBe(4);
+  });
+
   test("tool.started and tool.completed track tool status and append tool result messages", () => {
     const state = reduceAll([
       { type: "agent.run.started", runId, input: "use tool" },

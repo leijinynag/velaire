@@ -1,5 +1,6 @@
 import type { RuntimeEvent } from "@/foundation/events/types";
 import type { ApprovalDecision } from "@/policy/types";
+import type { AskUserQuestionResult } from "@/tools/user-interaction";
 
 import { createDemoEvents, createDemoRunId } from "./demo-events";
 import { pickNativeFolder, type NativeFolderPicker } from "./native-folder-picker";
@@ -40,6 +41,10 @@ interface CreateRunBody {
 
 interface ApprovalBody {
   decision?: ApprovalDecision;
+}
+
+interface UserQuestionBody {
+  answers?: AskUserQuestionResult["answers"];
 }
 
 // Legacy active runs for demo mode
@@ -135,6 +140,11 @@ export async function handleWorkbenchRequest(request: Request, context: Workbenc
     const approvalMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/approvals\/([^/]+)$/);
     if (method === "POST" && approvalMatch?.[1] && approvalMatch?.[2]) {
       return handleApproval(request, approvalMatch[1], approvalMatch[2], sessionManager);
+    }
+
+    const questionMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/questions\/([^/]+)$/);
+    if (method === "POST" && questionMatch?.[1] && questionMatch?.[2]) {
+      return handleUserQuestion(request, questionMatch[1], questionMatch[2], sessionManager);
     }
   }
 
@@ -243,6 +253,14 @@ async function handleApproval(request: Request, sessionId: string, toolUseId: st
   if (!body.decision) return json({ error: "decision is required" }, 400);
   const ok = sessionManager.approve(sessionId, toolUseId, body.decision);
   if (!ok) return json({ error: "No pending approval matching that toolUseId" }, 404);
+  return json({ ok: true });
+}
+
+async function handleUserQuestion(request: Request, sessionId: string, toolUseId: string, sessionManager: SessionManager): Promise<Response> {
+  const body = await parseJsonBody<UserQuestionBody>(request);
+  if (!Array.isArray(body.answers)) return json({ error: "answers are required" }, 400);
+  const ok = sessionManager.answerQuestion(sessionId, toolUseId, { answers: body.answers });
+  if (!ok) return json({ error: "No pending question matching that toolUseId" }, 404);
   return json({ ok: true });
 }
 

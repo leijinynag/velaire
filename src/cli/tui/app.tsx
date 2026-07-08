@@ -21,7 +21,7 @@ export function App({ approvalManager, commands = BUILTIN_COMMANDS, multiAgentRu
   const [mode, setMode] = useState<CodingInteractionMode>("normal");
   const activeRuntime = mode === "normal" ? runtime : multiAgentRuntime ?? runtime;
   const { state, viewModel, applyEvent } = useRuntimeEvents({ modelName: activeRuntime?.modelName });
-  const todoView = useMemo(() => buildTodoViewState(viewModel.messages), [viewModel.messages]);
+  const todoView = useMemo(() => buildTodoViewState(state.messages), [state.messages]);
   const [approvalRequest, setApprovalRequest] = useState(() => approvalManager?.currentRequest ?? null);
 
   useEffect(() => {
@@ -37,7 +37,7 @@ export function App({ approvalManager, commands = BUILTIN_COMMANDS, multiAgentRu
     <Box flexDirection="column" width="100%">
       {state.messages.length === 0 ? <Header modelName={viewModel.modelName} /> : null}
       <AgentLanes agents={state.agents} />
-      <MessageHistory messages={viewModel.messages} todoSnapshots={todoView.todoSnapshots} />
+      <MessageHistory messages={viewModel.messages} startIndex={viewModel.hiddenMessageCount} hiddenMessageCount={viewModel.hiddenMessageCount} todoSnapshots={todoView.todoSnapshots} />
       {approvalRequest ? (
         <ApprovalPrompt request={approvalRequest} supportProjectWideAllow onDecision={(decision) => approvalManager?.respond(decision)} />
       ) : null}

@@ -22,6 +22,9 @@ import { ProviderRegistry } from "@/providers/registry";
 import type { ModelProvider } from "@/providers/types";
 import { AgentRuntime } from "@/runtime/agent-runtime";
 import type { AgentRunOptions, RuntimeRunner } from "@/runtime/types";
+import { createCodingToolSystem } from "@/tools/coding";
+import { ToolRegistry } from "@/tools/registry";
+import type { AskUserQuestionParameters, AskUserQuestionResult } from "@/tools/user-interaction";
 import { createWorkbenchServer } from "@/workbench/server";
 import { createDemoEvents, createDemoRunId } from "@/workbench/server/demo-events";
 
@@ -48,6 +51,8 @@ export type ResolvedRunConfiguration = {
   modelEntry?: ModelEntry;
   policyProfile: PolicyProfile;
 };
+
+type AskUserQuestionHandler = (params: AskUserQuestionParameters, toolUseId?: string) => Promise<AskUserQuestionResult>;
 // command树
 export function createProgram(): Command {
   const program = new Command();
@@ -105,8 +110,8 @@ async function startWorkbench(options: { port: string; provider?: string; worksp
     cwd: defaultWorkspace,
     port: Number.isFinite(port) ? port : 4321,
     demo,
-    createRuntime: demo ? undefined : async (workspace, approvalManager, preset) => {
-      return createRuntimeFromConfig(config, { provider: options.provider, preset }, { approvalManager, cwd: workspace });
+    createRuntime: demo ? undefined : async (workspace, approvalManager, preset, interactions) => {
+      return createRuntimeFromConfig(config, { provider: options.provider, preset }, { approvalManager, cwd: workspace, askUserQuestion: interactions?.askUserQuestion });
     },
     ...(demo ? { runAgent: (prompt) => {
       const runId = createDemoRunId();
@@ -178,7 +183,7 @@ async function runOnce(options: RunCommandOptions): Promise<void> {
 export async function createRuntimeFromConfig(
   config: VelaireConfig,
   options: Pick<RunCommandOptions, "provider" | "preset" | "modelName">,
-  runtimeOptions: { approvalManager?: Pick<ApprovalManager, "requestApproval">; cwd?: string } = {},
+  runtimeOptions: { approvalManager?: Pick<ApprovalManager, "requestApproval">; askUserQuestion?: AskUserQuestionHandler; cwd?: string } = {},
 ): Promise<RuntimeRunner> {
   const resolved = resolveRunConfiguration(options, config);
   const provider = createProvider(resolved.providerName, resolved.modelEntry);
@@ -192,15 +197,21 @@ export async function createRuntimeFromConfig(
       cwd,
       policyProfile: resolved.policyProfile,
       askUser: runtimeOptions.approvalManager?.requestApproval.bind(runtimeOptions.approvalManager),
+      askUserQuestion: runtimeOptions.askUserQuestion,
     });
+  }
+  const toolSystem = resolved.presetName === codingPreset.name ? createCodingToolSystem({ askUserQuestion: runtimeOptions.askUserQuestion }) : null;
+  const codingTools = toolSystem ? new ToolRegistry() : null;
+  if (toolSystem && codingTools) {
+    for (const tool of toolSystem.tools) codingTools.register(tool);
   }
   const runtime = new AgentRuntime({
     provider,
     systemPrompt: await preset.createSystemPrompt({ cwd }),
-    tools: preset.createTools(),
+    tools: codingTools ?? preset.createTools(),
     cwd,
     policyProfile: resolved.policyProfile,
-    middleware: preset.createMiddleware?.() ?? [],
+    middleware: toolSystem?.middleware ?? preset.createMiddleware?.() ?? [],
     askUser: runtimeOptions.approvalManager?.requestApproval.bind(runtimeOptions.approvalManager),
     approvalPersistence: { loadAllowList: loadProjectAllowList, persistAllowedTool },
     modelName,

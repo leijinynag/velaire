@@ -2,12 +2,14 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 
 import type { RuntimeEvent } from "@/foundation/events/types";
 import type { ApprovalDecision } from "@/policy/types";
+import type { AskUserQuestionAnswer } from "@/tools/user-interaction";
 import type { AgentUiState } from "@/ui-state";
 import { createInitialAgentUiState, reduceRuntimeEvent } from "@/ui-state";
 
 export type RunLogSummary = { runId: string; path: string; updatedAt: string };
 export type SessionSummary = { sessionId: string; workspace: string; runs: string[]; status: string; createdAt: string; updatedAt: string; preset?: string };
 export type SkillFrontmatter = { name: string; description: string; path: string };
+export type WorkbenchRunMode = "normal" | "plan" | "multi-agent";
 export type WorkspaceFileEntry = {
   name: string;
   path: string;
@@ -31,6 +33,7 @@ function workbenchReducer(state: AgentUiState, action: WorkbenchAction): AgentUi
 // ── localStorage helpers ──────────────────────────────────────────────────────
 
 const LS_SESSION_KEY = "velaire-session-v1";
+const LS_RUN_MODE_KEY = "velaire-run-mode-v1";
 
 function saveSessionToStorage(sessionId: string, workspace: string) {
   try { localStorage.setItem(LS_SESSION_KEY, JSON.stringify({ sessionId, workspace })); } catch { /* ignore */ }
@@ -72,6 +75,14 @@ export function useWorkbenchRun() {
   const [selectedToolUseId, setSelectedToolUseId] = useState<string | null>(null);
   const [selectedInspector, setSelectedInspector] = useState("timeline");
   const [mode, setMode] = useState<"demo" | "live">("live");
+  const [runMode, setRunModeState] = useState<WorkbenchRunMode>(() => {
+    try {
+      const stored = localStorage.getItem(LS_RUN_MODE_KEY);
+      return stored === "plan" || stored === "multi-agent" || stored === "normal" ? stored : "normal";
+    } catch {
+      return "normal";
+    }
+  });
   const [error, setError] = useState<string | null>(null);
   const [runs, setRuns] = useState<RunLogSummary[]>([]);
   const [activeRailItem, setActiveRailItem] = useState<string | null>("Sessions");
@@ -83,6 +94,7 @@ export function useWorkbenchRun() {
   const [skills, setSkills] = useState<SkillFrontmatter[]>([]);
   const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFileEntry[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
+  const autoSessionStartedRef = useRef(false);
   const [theme, setThemeState] = useState<"dark" | "light">(() => {
     try { return (localStorage.getItem("velaire-theme") as "dark" | "light") ?? "dark"; } catch { return "dark"; }
   });
@@ -100,6 +112,10 @@ export function useWorkbenchRun() {
   }, [theme]);
 
   const toggleTheme = useCallback(() => setThemeState((prev) => (prev === "dark" ? "light" : "dark")), []);
+  const setRunMode = useCallback((next: WorkbenchRunMode) => {
+    setRunModeState(next);
+    try { localStorage.setItem(LS_RUN_MODE_KEY, next); } catch { /* ignore */ }
+  }, []);
 
   // Persist sessionId + workspace to localStorage whenever they change
   const setSessionId = useCallback((id: string | null, ws?: string) => {
@@ -247,11 +263,12 @@ export function useWorkbenchRun() {
 
   const createSession = useCallback(async (ws: string, preset?: string): Promise<string | null> => {
     setError(null);
+    const selectedPreset = preset ?? "coding-multi-agent";
     try {
       const response = await fetch("/api/sessions", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ workspace: ws || undefined, preset }),
+        body: JSON.stringify({ workspace: ws || undefined, preset: selectedPreset }),
       });
       const data = (await response.json()) as { sessionId?: string; workspace?: string; error?: string };
       if (!response.ok || !data.sessionId) {
@@ -275,6 +292,12 @@ export function useWorkbenchRun() {
       return null;
     }
   }, [openSessionEventSource, refreshSkills, refreshWorkspaceFiles, fetchSessions, setSessionId]);
+
+  useEffect(() => {
+    if (mode !== "live" || sessionId || !serverWorkspace || autoSessionStartedRef.current) return;
+    autoSessionStartedRef.current = true;
+    void createSession(serverWorkspace, "coding-multi-agent");
+  }, [createSession, mode, serverWorkspace, sessionId]);
 
   // Switch to an existing session: load its events and reopen SSE
   const switchSession = useCallback(async (sid: string) => {
@@ -305,7 +328,7 @@ export function useWorkbenchRun() {
     setSelectedInspector("timeline");
     eventSourceRef.current?.close();
     setSessionId(null);
-    return createSession(ws);
+    return createSession(ws, "coding-multi-agent");
   }, [createSession, setSessionId]);
 
   const submitPrompt = useCallback(async (prompt: string, options: { mode?: "normal" | "plan" | "multi-agent"; specPath?: string } = {}) => {
@@ -377,6 +400,15 @@ export function useWorkbenchRun() {
     });
   }, [sessionId]);
 
+  const answerQuestion = useCallback(async (toolUseId: string, answers: AskUserQuestionAnswer[]) => {
+    if (!sessionId || !answers) return;
+    await fetch(`/api/sessions/${sessionId}/questions/${toolUseId}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ answers }),
+    });
+  }, [sessionId]);
+
   const toggleRailItem = useCallback((item: string) => {
     setActiveRailItem((prev) => (prev === item ? null : item));
   }, []);
@@ -393,6 +425,8 @@ export function useWorkbenchRun() {
     filesLoading,
     theme,
     toggleTheme,
+    runMode,
+    setRunMode,
     createSession,
     switchSession,
     switchWorkspace,
@@ -401,6 +435,7 @@ export function useWorkbenchRun() {
     runPrompt,
     replayRun,
     approve,
+    answerQuestion,
     refreshSkills,
     refreshWorkspaceFiles,
     fetchSessions,

@@ -3,6 +3,7 @@ import type { PolicyDecisionKind, RuntimeEvent, TimelineItem } from "@/foundatio
 import type { NonSystemMessage } from "@/foundation/messages/types";
 import type { ApprovalDecision } from "@/policy/types";
 import type { ToolCapability, ToolRiskProfile } from "@/tools/types";
+import type { AskUserQuestionAnswer, AskUserQuestionParameters } from "@/tools/user-interaction";
 import type { FileChange } from "@/tools/workspace/file-change";
 
 export type AgentToolRunStatus = "started" | "completed" | "failed";
@@ -34,6 +35,13 @@ export interface AgentApprovalState {
   prompt?: string;
   approved?: boolean;
   resolve?: (decision: ApprovalDecision) => void;
+  agentId?: string;
+}
+
+export interface AgentUserQuestionState {
+  toolUseId: string;
+  questions: AskUserQuestionParameters["questions"];
+  answers?: AskUserQuestionAnswer[];
   agentId?: string;
 }
 
@@ -83,6 +91,9 @@ export interface AgentUiState {
   tools: Record<string, AgentToolRun>;
   pendingApproval: AgentApprovalState | null;
   pendingApprovals: Record<string, AgentApprovalState>;
+  pendingUserQuestion: AgentUserQuestionState | null;
+  pendingUserQuestions: Record<string, AgentUserQuestionState>;
+  userQuestions: Record<string, AgentUserQuestionState>;
   approvals: Record<string, AgentApprovalState>;
   timeline: AgentTimelineItem[];
   tokenUsage: AgentTokenUsageState;

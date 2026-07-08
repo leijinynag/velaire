@@ -47,19 +47,19 @@ function validateAnswers(params: AskUserQuestionParameters, result: AskUserQuest
   return undefined;
 }
 
-export function createAskUserQuestionTool(callback: (params: AskUserQuestionParameters) => Promise<AskUserQuestionResult> = async () => ({ answers: [] })): ToolDefinition<z.infer<typeof schema>, AskUserQuestionResult> {
+export function createAskUserQuestionTool(callback: (params: AskUserQuestionParameters, toolUseId?: string) => Promise<AskUserQuestionResult> = async () => ({ answers: [] })): ToolDefinition<z.infer<typeof schema>, AskUserQuestionResult> {
   return {
     name: "ask_user_question",
     description: "Ask the user one or more independent fixed-choice questions and return validated selections.",
     schema,
     capabilities: ["user.interaction"],
     risk: { level: "low", reversible: true, description: "Only asks the user for input." },
-    async execute(input, { signal }) {
+    async execute(input, { signal, toolUseId }) {
       if (signal?.aborted) {
         return toolFailure({ summary: "Question aborted", modelContent: "ask_user_question was aborted.", code: "QUESTION_ABORTED", message: "Question was aborted." });
       }
       try {
-        const result = await callback(input);
+        const result = await callback(input, toolUseId);
         if (signal?.aborted) {
           return toolFailure({ summary: "Question aborted", modelContent: "ask_user_question was aborted.", code: "QUESTION_ABORTED", message: "Question was aborted." });
         }

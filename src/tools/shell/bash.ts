@@ -20,6 +20,18 @@ async function readPipe(stream: ReadableStream<Uint8Array> | null): Promise<stri
   return new Response(stream).text();
 }
 
+function killProcessGroup(pid: number, signal: NodeJS.Signals): void {
+  try {
+    process.kill(-pid, signal);
+  } catch {
+    try {
+      process.kill(pid, signal);
+    } catch {
+      // Process may have already exited; callers still wait for stdio to close.
+    }
+  }
+}
+
 export const bashTool: ToolDefinition<z.infer<typeof schema>, { exitCode: number | null; stdout: string; stderr: string; truncated: boolean }> = {
   name: "bash",
   description: "Execute a shell command in bash with cwd, timeout, AbortSignal, separated stdout/stderr, and truncated output. Include a short description explaining why the command is needed.",
@@ -39,15 +51,15 @@ export const bashTool: ToolDefinition<z.infer<typeof schema>, { exitCode: number
 
     try {
       // shell 执行统一在这里绑定 cwd、超时、中断和输出截断。
-      const proc = Bun.spawn({ cmd: ["bash", "-lc", command], cwd: workingDirectory, stdout: "pipe", stderr: "pipe" });
+      const proc = Bun.spawn({ cmd: ["bash", "-lc", command], cwd: workingDirectory, stdout: "pipe", stderr: "pipe", detached: true });
       const kill = () => {
         aborted = true;
-        proc.kill();
+        killProcessGroup(proc.pid, "SIGTERM");
       };
       context.signal?.addEventListener("abort", kill, { once: true });
       timeoutId = setTimeout(() => {
         timedOut = true;
-        proc.kill();
+        killProcessGroup(proc.pid, "SIGTERM");
       }, timeout ?? DEFAULT_TIMEOUT_MS);
 
       const [stdoutRaw, stderrRaw, exitCode] = await Promise.all([readPipe(proc.stdout), readPipe(proc.stderr), proc.exited]);

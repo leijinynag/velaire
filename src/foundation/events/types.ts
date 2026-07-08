@@ -2,6 +2,7 @@ import type { AgentError } from "@/foundation/errors/types";
 import type { AssistantMessage, TokenUsage } from "@/foundation/messages/types";
 import type { ToolCapability, ToolExecutionResult, ToolRiskProfile } from "@/foundation/tools/types";
 import type { ApprovalDecision } from "@/policy/types";
+import type { AskUserQuestionAnswer, AskUserQuestionParameters } from "@/tools/user-interaction";
 
 export const runtimeEventTypes = [
   "agent.run.started",
@@ -14,6 +15,8 @@ export const runtimeEventTypes = [
   "policy.decision",
   "approval.requested",
   "approval.resolved",
+  "user.question.requested",
+  "user.question.resolved",
   "tool.started",
   "tool.completed",
   "timeline.item.added",
@@ -54,6 +57,8 @@ export type RuntimeEvent =
   | ({ type: "policy.decision"; runId: string; step: number; toolUseId: string; decision: PolicyDecisionKind; reason: string } & RuntimeEventMeta)
   | ({ type: "approval.requested"; runId: string; step: number; toolUseId: string; toolName?: string; input?: Record<string, unknown>; prompt: string; resolve?: (decision: ApprovalDecision) => void } & RuntimeEventMeta)
   | ({ type: "approval.resolved"; runId: string; step: number; toolUseId: string; approved: boolean } & RuntimeEventMeta)
+  | ({ type: "user.question.requested"; runId: string; step: number; toolUseId: string; questions: AskUserQuestionParameters["questions"] } & RuntimeEventMeta)
+  | ({ type: "user.question.resolved"; runId: string; step: number; toolUseId: string; answers: AskUserQuestionAnswer[] } & RuntimeEventMeta)
   | ({ type: "tool.started"; runId: string; step: number; toolUseId: string; toolName: string } & RuntimeEventMeta)
   | ({ type: "tool.completed"; runId: string; step: number; toolUseId: string; toolName: string; result: ToolExecutionResult } & RuntimeEventMeta)
   | ({ type: "timeline.item.added"; runId: string; item: TimelineItem } & RuntimeEventMeta)

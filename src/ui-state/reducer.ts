@@ -14,6 +14,9 @@ export function createInitialAgentUiState(): AgentUiState {
     tools: {},
     pendingApproval: null,
     pendingApprovals: {},
+    pendingUserQuestion: null,
+    pendingUserQuestions: {},
+    userQuestions: {},
     approvals: {},
     timeline: [],
     tokenUsage: { latestInputTokens: 0, latestOutputTokens: 0, sessionTotalTokens: 0 },
@@ -102,6 +105,34 @@ export function reduceRuntimeEvent(state: AgentUiState, event: RuntimeEvent): Ag
         approvals: {
           ...baseState.approvals,
           [event.toolUseId]: { toolUseId: previous.toolUseId, approved: event.approved, agentId: event.agentId ?? previous.agentId },
+        },
+      };
+    }
+
+    case "user.question.requested":
+      return {
+        ...baseState,
+        pendingUserQuestion: baseState.pendingUserQuestion ?? { toolUseId: event.toolUseId, questions: event.questions, agentId: event.agentId },
+        pendingUserQuestions: {
+          ...baseState.pendingUserQuestions,
+          [event.toolUseId]: { toolUseId: event.toolUseId, questions: event.questions, agentId: event.agentId },
+        },
+        userQuestions: {
+          ...baseState.userQuestions,
+          [event.toolUseId]: { toolUseId: event.toolUseId, questions: event.questions, agentId: event.agentId },
+        },
+      };
+
+    case "user.question.resolved": {
+      const previous = baseState.userQuestions[event.toolUseId] ?? { toolUseId: event.toolUseId, questions: [] };
+      const { [event.toolUseId]: _resolved, ...pendingUserQuestions } = baseState.pendingUserQuestions;
+      return {
+        ...baseState,
+        pendingUserQuestion: baseState.pendingUserQuestion?.toolUseId === event.toolUseId ? firstPendingUserQuestion(pendingUserQuestions) : baseState.pendingUserQuestion,
+        pendingUserQuestions,
+        userQuestions: {
+          ...baseState.userQuestions,
+          [event.toolUseId]: { ...previous, answers: event.answers, agentId: event.agentId ?? previous.agentId },
         },
       };
     }
@@ -299,6 +330,10 @@ function upsertToolUseMessage(messages: NonSystemMessage[], message: AssistantMe
 
 function firstPendingApproval(approvals: Record<string, NonNullable<ReturnType<typeof createInitialAgentUiState>["pendingApproval"]>>) {
   return Object.values(approvals)[0] ?? null;
+}
+
+function firstPendingUserQuestion(questions: Record<string, NonNullable<ReturnType<typeof createInitialAgentUiState>["pendingUserQuestion"]>>) {
+  return Object.values(questions)[0] ?? null;
 }
 
 function trackAgentLane(state: AgentUiState, event: RuntimeEvent): AgentUiState {

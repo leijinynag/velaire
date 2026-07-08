@@ -23,6 +23,8 @@ export function WorkbenchApp() {
     filesLoading,
     theme,
     toggleTheme,
+    runMode,
+    setRunMode,
     createSession,
     switchSession,
     switchWorkspace,
@@ -30,6 +32,7 @@ export function WorkbenchApp() {
     stopRun,
     runPrompt,
     approve,
+    answerQuestion,
     refreshSkills,
     refreshWorkspaceFiles,
     fetchSessions,
@@ -53,10 +56,12 @@ export function WorkbenchApp() {
     setSelectedInspector("tool");
   }
 
-  const handleSubmit = mode === "demo" ? runPrompt : submitPrompt;
-  const handlePlanWithMultiAgent = (prompt: string) => submitPrompt(prompt, { mode: "plan" });
+  const handleSubmit = mode === "demo"
+    ? runPrompt
+    : (prompt: string) => submitPrompt(prompt, { mode: runMode });
   const latestSpecArtifact = Object.values(state.orchestration.artifacts).find((artifact) => artifact.kind === "spec") ?? null;
-  const handleStartImplementation = latestSpecArtifact
+  const canStartImplementation = state.orchestration.status === "awaiting_approval";
+  const handleStartImplementation = latestSpecArtifact && canStartImplementation
     ? () => submitPrompt("Continue from approved spec.", { mode: "multi-agent", specPath: latestSpecArtifact.path })
     : undefined;
   const drawer = activeRailItem === "Sessions" ? (
@@ -110,7 +115,6 @@ export function WorkbenchApp() {
         <Header state={state} mode={mode} metrics={metrics} workspace={workspace} theme={theme} onToggleTheme={toggleTheme} />
         <WorkspaceLanding
           serverWorkspace={serverWorkspace}
-          availablePresets={availablePresets}
           onSelect={(ws, preset) => void createSession(ws, preset)}
         />
       </div>
@@ -136,11 +140,13 @@ export function WorkbenchApp() {
           conversation={conversation}
           error={error}
           onSubmit={handleSubmit}
-          onPlanWithMultiAgent={handlePlanWithMultiAgent}
+          runMode={runMode}
+          onRunModeChange={setRunMode}
           onStartImplementation={handleStartImplementation}
           onStop={stopRun}
           onSelectTool={setSelectedToolUseId}
           onApprove={approve}
+          onAnswerQuestion={answerQuestion}
         />}
         inspector={<InspectorPanel
           state={state}

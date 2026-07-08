@@ -6,6 +6,7 @@ import { MockModelProvider } from "@/providers/mock/provider";
 import { AgentRuntime } from "@/runtime/agent-runtime";
 import { ToolRegistry } from "@/tools/registry";
 import type { ToolDefinition } from "@/tools/types";
+import { createAskUserQuestionTool } from "@/tools/user-interaction";
 
 const echoTool: ToolDefinition<{ value: string }> = {
   name: "echo",
@@ -218,6 +219,69 @@ describe("agent runtime", () => {
       remaining.push(event.type);
     }
     expect(remaining).toContain("approval.resolved");
+    expect(remaining).toContain("tool.completed");
+  });
+
+  test("emits user question request before waiting for ask_user_question answer", async () => {
+    let answer!: () => void;
+    const answerGate = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    const registry = new ToolRegistry();
+    registry.register(createAskUserQuestionTool(async () => {
+      await answerGate;
+      return { answers: [{ question_index: 0, selected_labels: ["Fast"] }] };
+    }));
+    const runtime = new AgentRuntime({
+      provider: new MockModelProvider({
+        eventBatches: [
+          [
+            { type: "message_start" },
+            {
+              type: "tool_use",
+              id: "toolu_question",
+              name: "ask_user_question",
+              input: {
+                questions: [
+                  {
+                    header: "Mode",
+                    question: "Choose mode",
+                    multi_select: false,
+                    options: [
+                      { label: "Fast", description: "Quick pass" },
+                      { label: "Polished", description: "More detail" },
+                    ],
+                  },
+                ],
+              },
+            },
+            { type: "message_stop" },
+          ],
+          [{ type: "message_start" }, { type: "text_delta", text: "done" }, { type: "message_stop" }],
+        ],
+      }),
+      systemPrompt: "You are Velaire.",
+      tools: registry,
+    });
+
+    const iterator = runtime.run("ask first")[Symbol.asyncIterator]();
+    const seen: string[] = [];
+    for (let i = 0; i < 10; i++) {
+      const next = await iterator.next();
+      expect(next.done).toBe(false);
+      if (!next.done) seen.push(next.value.type);
+      if (next.value?.type === "user.question.requested") break;
+    }
+
+    expect(seen).toContain("user.question.requested");
+    expect(seen).not.toContain("user.question.resolved");
+
+    answer();
+    const remaining: string[] = [];
+    for await (const event of { [Symbol.asyncIterator]: () => iterator }) {
+      remaining.push(event.type);
+    }
+    expect(remaining).toContain("user.question.resolved");
     expect(remaining).toContain("tool.completed");
   });
 
