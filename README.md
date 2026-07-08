@@ -3,9 +3,12 @@
 <p align="center">
   <img src="./docs/assets/velaire-workbench-poster.png" alt="Velaire Visual Agent Workbench" width="960" />
 </p>
-#Demo
-https://github.com/user-attachments/assets/a577dd31-f7ed-48c5-a75a-c0a2f675de77
 <p align="center">
+  
+
+https://github.com/user-attachments/assets/46291ccb-beef-48c8-a80a-446ff577e850
+
+
   <a href="./README.zh.md">中文 README</a>
   ·
   <a href="./docs/architecture.md">Architecture</a>
